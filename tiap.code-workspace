@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"go.testTimeout": "120s",
+		"go.generateTestsFlags": [
+			"-v"
+		]
+	}
+}

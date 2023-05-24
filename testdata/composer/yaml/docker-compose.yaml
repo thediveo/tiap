@@ -1,0 +1,10 @@
+version: '42'
+services:
+  foo:
+    image: "busybox:latest"
+  bar:
+    image: "alpine:latest"
+  baz:
+    image: "alpine:latest"
+notworks:
+  posthoernchen:

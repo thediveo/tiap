@@ -1,0 +1,18 @@
+{
+    "versionNumber": "",
+    "versionId": "",
+    "title": "Hellorld!",
+    "appId": "c535a6d381284839b458e3f572af18ce",
+    "restRedirectUrl": "",
+    "redirectSection": "hellorld",
+    "redirectUrl": "hellorld/",
+    "redirectType": "FormBoxReverseProxy",
+    "description": "Hellorld!",
+    "swarmModeEnable": false,
+    "required": [],
+    "releaseNotes": "",
+    "signUpType": "None",
+    "externalConfigurator": false,
+    "externalUrl": false,
+    "isAppSecure": false
+}

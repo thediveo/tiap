@@ -1,0 +1,11 @@
+{
+    "hellorld": [
+        {
+            "name": "hellorld",
+            "protocol": "HTTP",
+            "port": 5001,
+            "headers": "",
+            "rewritetarget": "/"
+        }
+    ]
+}

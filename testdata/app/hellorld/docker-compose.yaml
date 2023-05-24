@@ -1,0 +1,10 @@
+version: '2.3'
+services:
+  hellorld:
+    image: "busybox:stable"
+    command:
+    - /bin/sh
+    - "-c"
+    - "echo Hellorld!>index.html && httpd -f -p 5001"
+    ports:
+    #  - "5001:5001"

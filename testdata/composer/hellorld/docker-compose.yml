@@ -1,0 +1,10 @@
+version: '42'
+services:
+  foo:
+    image: "busybox:stable"
+  bar:
+    image: "alpine:edge" # *snicker* ... how apt
+  baz:
+    image: "alpine:edge"
+notworks:
+  posthoernchen:

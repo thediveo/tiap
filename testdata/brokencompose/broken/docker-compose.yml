@@ -1,0 +1,3 @@
+services:
+  foobar:
+    image: " # Yes, single opening quote only.
