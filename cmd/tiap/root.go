@@ -72,11 +72,12 @@ func newRootCmd() (rootCmd *cobra.Command) {
 
 			semver, _ := rootCmd.Flags().GetString(appVersionFlag)
 			if semver == "" {
-				semverbytes, err := exec.Command("git", "describe").Output()
+				out, err := exec.Command("git", "describe").CombinedOutput()
 				if err != nil {
-					return err
+					log.Errorf(fmt.Sprintf("git describe: %s", out))
+					return fmt.Errorf("git describe failed: %s", out)
 				}
-				semver = strings.Trim(string(semverbytes), "\r\n")
+				semver = strings.Trim(string(out), "\r\n")
 			}
 
 			releaseNotes, _ := rootCmd.Flags().GetString(releaseNotesFlag)
