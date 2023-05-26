@@ -1,6 +1,6 @@
 # `tiap` isn't app publisher
 
-![Coverage](https://img.shields.io/badge/Coverage-86.8%25-brightgreen)
+![Coverage](https://img.shields.io/badge/Coverage-92.1%25-brightgreen)
 
 `tiap` is a small Go module and CLI tool to easily create Industrial Edge `.app`
 files (packages) for continuous delivery. It does nothing more than pulling the
