@@ -22,6 +22,7 @@ import (
 	"runtime/debug"
 	"strings"
 
+	"github.com/Masterminds/semver/v3"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/thediveo/tiap"
@@ -57,14 +58,19 @@ func newRootCmd() (rootCmd *cobra.Command) {
 			log.Info(fmt.Sprintf("   %s", rootCmd.Version))
 			log.Info("⚖  Apache 2.0 License")
 
-			semver, _ := rootCmd.Flags().GetString(appVersionFlag)
-			if semver == "" {
+			appSemver, _ := rootCmd.Flags().GetString(appVersionFlag)
+			if appSemver == "" {
 				out, err := exec.Command("git", "describe").CombinedOutput()
 				if err != nil {
 					log.Errorf(fmt.Sprintf("git describe: %s", out))
 					return fmt.Errorf("git describe failed: %s", out)
 				}
-				semver = strings.Trim(string(out), "\r\n")
+				appSemver = strings.Trim(string(out), "\r\n")
+			}
+			appSemver = strings.TrimPrefix(appSemver, "v")
+			if _, err := semver.StrictNewVersion(appSemver); err != nil {
+				return fmt.Errorf("invalid app semver %q, reason: %w",
+					appSemver, err)
 			}
 
 			releaseNotes, _ := rootCmd.Flags().GetString(releaseNotesFlag)
@@ -75,7 +81,7 @@ func newRootCmd() (rootCmd *cobra.Command) {
 			}
 			defer app.Done()
 
-			err = app.SetDetails(semver, releaseNotes)
+			err = app.SetDetails(appSemver, releaseNotes)
 			if err != nil {
 				return err
 			}

@@ -13,9 +13,12 @@ purging out the image files and the digest.json file. The structure thus is as
 follows:
   - detail.json (but leave the versionNumber and versionId fields empty)
   - $REPO/
-  - $REPO/appicon.png
+  - $REPO/appicon.png (150⨉150 pixels)
   - $REPO/docker-compose.yml (or .yaml)
   - $REPO/nginx (where necessary)
   - $REPO/nginx/nginx.json
+
+Here, $REPO is an almost arbitrary directory name (except for “images”) that is
+considered to be the app's “repository” name.
 */
 package tiap

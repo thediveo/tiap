@@ -1,6 +1,9 @@
 # `tiap` isn't app publisher
 
+[![PkgGoDev](https://img.shields.io/badge/-reference-blue?logo=go&logoColor=white&labelColor=505050)](https://pkg.go.dev/github.com/thediveo/tiap)
+[![GitHub](https://img.shields.io/github/license/thediveo/tiap)](https://img.shields.io/github/license/thediveo/tiap)
 ![Coverage](https://img.shields.io/badge/Coverage-92.1%25-brightgreen)
+[![Go Report Card](https://goreportcard.com/badge/github.com/thediveo/tiap)](https://goreportcard.com/report/github.com/thediveo/tiap)
 
 `tiap` is a small Go module and CLI tool to easily create Industrial Edge `.app`
 files (packages) for continuous delivery. It does nothing more than pulling the
@@ -15,7 +18,8 @@ users into their IEM systems.
     -o hellorld.app hellorldapp/
   ```
 - defaults to using `git describe` to set the app version, or set explicitly
-  using `--app-version $SEMVER`).
+  using `--app-version $SEMVER`. Even accepts `v` prefixed semvers and then
+  drops the prefix.
 - talks to the Docker API _socket_, so there's no need to either reconfigure the
   Docker daemon in your dev system or in pipelines, or to fiddle around with
   `socat` to reroute a localhost TCP port to the Docker socker.
@@ -93,6 +97,9 @@ after all). Delete the `images` directory and `digests.json`. The rest should be
 checked into your git repository.
 
 See also `testdata/app` for our canonical "Hellorld!" example.
+
+The sweet size for app icons seem to be 150⨉150 pixels and they must be in PNG
+format.
 
 ## Copyright and License
 
