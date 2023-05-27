@@ -5,6 +5,6 @@ services:
     command:
     - /bin/sh
     - "-c"
-    - "echo Hellorld!>index.html && httpd -f -p 5001"
+    - "mkdir /www && echo Hellorld!>/www/index.html && httpd -f -p 5001 -h /www"
     ports:
     #  - "5001:5001"

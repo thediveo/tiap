@@ -54,20 +54,7 @@ func newRootCmd() (rootCmd *cobra.Command) {
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			log.Info("🗩  tiap ... isn't app publisher")
-
-			info, biok := debug.ReadBuildInfo()
-			if biok {
-				commit := buildInfo(info, "vcs.revision")
-				if commit != "" {
-					modified := ""
-					if buildInfo(info, "vcs.modified") == "true" {
-						modified = " (modified)"
-					}
-					log.Info(fmt.Sprintf("   %s commit %s%s",
-						info.Main.Version, commit[:8], modified))
-				}
-			}
-
+			log.Info(fmt.Sprintf("   %s", rootCmd.Version))
 			log.Info("⚖  Apache 2.0 License")
 
 			semver, _ := rootCmd.Flags().GetString(appVersionFlag)
@@ -118,6 +105,19 @@ func newRootCmd() (rootCmd *cobra.Command) {
 
 	rootCmd.Flags().StringP(dockerHostFlag, "H", "",
 		"Docker daemon socket to connect to")
+
+	if info, biok := debug.ReadBuildInfo(); biok {
+		commit := buildInfo(info, "vcs.revision")
+		if commit != "" {
+			modified := ""
+			if buildInfo(info, "vcs.modified") == "true" {
+				modified = " (modified)"
+			}
+			rootCmd.Version = fmt.Sprintf("commit %s%s", commit[:8], modified)
+		} else if modver := info.Main.Version; modver != "" {
+			rootCmd.Version = modver
+		}
+	}
 
 	return rootCmd
 }
