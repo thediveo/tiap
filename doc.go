@@ -20,5 +20,10 @@ follows:
 
 Here, $REPO is an almost arbitrary directory name (except for “images”) that is
 considered to be the app's “repository” name.
+
+Please note that tiap doesn't lint the Docker composer project, except for:
+  - rejecting “:latest” image references (yes, we're more strict than IE App
+    Publisher here for a reason),
+  - enforcing “mem_limit” service configuration.
 */
 package tiap

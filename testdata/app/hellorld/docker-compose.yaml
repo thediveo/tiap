@@ -5,6 +5,7 @@ services:
     command:
     - /bin/sh
     - "-c"
-    - "mkdir /www && echo Hellorld!>/www/index.html && httpd -f -p 5001 -h /www"
-    ports:
-    #  - "5001:5001"
+    - "mkdir -p /www && echo Hellorld!>/www/index.html && httpd -f -p 5099 -h /www"
+    #ports:
+    #  - "5099:5099"
+    mem_limit: 8M

@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 
 	"github.com/distribution/distribution/reference"
+	"github.com/docker/go-units"
 	"github.com/moby/moby/client"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
@@ -100,6 +101,14 @@ func (p *ComposerProject) Images() (ServiceImages, error) {
 			return nil, fmt.Errorf("service %q attempts to use latest tag", serviceName)
 		}
 		svcimgs[serviceName] = imageRef
+		memLimit, err := lookupString(config, "mem_limit")
+		if err != nil {
+			return nil, fmt.Errorf("service %q lacks mem_limit declaration", serviceName)
+		}
+		if _, err := units.FromHumanSize(memLimit); err != nil {
+			return nil, fmt.Errorf("service %q has invalid mem_limit %q, reason: %w",
+				serviceName, memLimit, err)
+		}
 	}
 
 	return svcimgs, nil

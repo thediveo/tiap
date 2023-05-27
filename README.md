@@ -2,7 +2,7 @@
 
 [![PkgGoDev](https://img.shields.io/badge/-reference-blue?logo=go&logoColor=white&labelColor=505050)](https://pkg.go.dev/github.com/thediveo/tiap)
 [![GitHub](https://img.shields.io/github/license/thediveo/tiap)](https://img.shields.io/github/license/thediveo/tiap)
-![Coverage](https://img.shields.io/badge/Coverage-92.1%25-brightgreen)
+![Coverage](https://img.shields.io/badge/Coverage-91.5%25-brightgreen)
 [![Go Report Card](https://goreportcard.com/badge/github.com/thediveo/tiap)](https://goreportcard.com/report/github.com/thediveo/tiap)
 
 `tiap` is a small Go module and CLI tool to easily create Industrial Edge `.app`
@@ -26,8 +26,10 @@ users into their IEM systems.
 - no need to deal with stateful IE app publisher workspaces.
 - small footprint.
 
-Please note that `tiap` doesn't lint the Docker composer project, except for
-rejecting `:latest` image references.
+Please note that `tiap` doesn't lint the Docker composer project, except for:
+- rejecting `:latest` image references (yes, we're more strict than IE App
+    Publisher here for a reason),
+- enforcing `mem_limit` service configuration.
 
 ## CLI
 

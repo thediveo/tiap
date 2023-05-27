@@ -2,9 +2,12 @@ version: '42'
 services:
   foo:
     image: "busybox:stable"
+    mem_limit: 8M # Mega ... not milli
   bar:
     image: "alpine:edge" # *snicker* ... how apt
+    mem_limit: 8M
   baz:
     image: "alpine:edge"
+    mem_limit: 8M
 notworks:
   posthoernchen:
