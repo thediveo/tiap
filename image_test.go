@@ -16,13 +16,11 @@ package tiap
 
 import (
 	"context"
-	"encoding/json"
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 
-	jp "github.com/PaesslerAG/jsonpath"
 	"github.com/docker/docker/api/types"
 	"github.com/moby/moby/client"
 
@@ -75,7 +73,7 @@ var _ = Describe("image pulling and saving", Ordered, func() {
 
 	})
 
-	It("pulls an image, saves it to a .tar file and names it after the SHA256 digest value", slowSpec, func(ctx context.Context) {
+	It("pulls an image, saves it to a .tar file and names it after the SHA256 of the image ref", slowSpec, func(ctx context.Context) {
 		moby.ImageRemove(ctx, canaryImageRef, types.ImageRemoveOptions{
 			Force:         true, // ensure test coverage
 			PruneChildren: true,
@@ -86,13 +84,9 @@ var _ = Describe("image pulling and saving", Ordered, func() {
 		Expect(filename).To(MatchRegexp(`^[0-9a-z]{64}\.tar$`))
 		Expect(filepath.Join(tmpDirPath, filename)).To(BeAnExistingFile())
 
-		jsons := Successful(
-			exec.Command("docker", "inspect", canaryImageRef).Output())
-		var v any
-		Expect(json.Unmarshal(jsons, &v)).To(Succeed())
-		imageID := Successful(jp.Get("$[0].Id", v)).(string)
-		Expect(imageID).To(HavePrefix("sha256:"))
-		Expect(filename).To(Equal(strings.TrimPrefix(imageID, "sha256:") + ".tar"))
+		digester := sha256.New()
+		digester.Write([]byte(canaryImageRef))
+		Expect(filename).To(Equal(hex.EncodeToString(digester.Sum(nil)) + ".tar"))
 	})
 
 })

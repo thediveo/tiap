@@ -17,6 +17,8 @@ package tiap
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -60,7 +62,10 @@ func SaveImageToFile(ctx context.Context,
 		return "", fmt.Errorf("image ID should be an sha256 digest, but instead is %q",
 			imageID)
 	}
-	filename = strings.TrimPrefix(imageID, "sha256:") + ".tar"
+	// The image save filename is the SHA256 of the imageref.
+	digester := sha256.New()
+	_, _ = digester.Write([]byte(imageref))
+	filename = hex.EncodeToString(digester.Sum(nil)) + ".tar"
 	// Copy the container image data from Docker's image storage into the file
 	// system path we were told.
 	imageFilename := filepath.Join(savedir, filename)

@@ -14,5 +14,6 @@
     "signUpType": "None",
     "externalConfigurator": false,
     "externalUrl": "",
+    "webAddress":"http://github.com/thediveo/tiap",
     "isAppSecure": false
 }
