@@ -228,36 +228,38 @@ func (a *App) Package(out string) error {
 		if err != nil {
 			return err
 		}
+		if path == "." {
+			return nil
+		}
+		log.Info(fmt.Sprintf("   📦  packaging %s", path))
+		stat, err := fs.Stat(rootfs, path)
+		if err != nil {
+			return err
+		}
+		header, err := tar.FileInfoHeader(stat, path)
+		if err != nil {
+			return err
+		}
+		header.Uid = 1000
+		header.Gid = 1000
+		header.Name = filepath.ToSlash(path)
+		err = tarrer.WriteHeader(header)
+		if err != nil {
+			return err
+		}
 		if dirEntry.IsDir() {
 			return nil
 		}
+		// Only copy contents if it's a regular file.
 		file, err := rootfs.Open(path)
 		if err != nil {
 			return err
 		}
 		defer file.Close()
-
-		log.Info(fmt.Sprintf("   📦  packaging %s", path))
-		stat, err := file.Stat()
-		if err != nil {
-			return err
-		}
-		err = tarrer.WriteHeader(&tar.Header{
-			Name:    path,
-			Size:    stat.Size(),
-			Mode:    int64(stat.Mode()),
-			ModTime: stat.ModTime(),
-			Uid:     1000,
-			Gid:     1000,
-		})
-		if err != nil {
-			return err
-		}
 		_, err = io.Copy(tarrer, file)
 		if err != nil {
 			return err
 		}
-
 		return nil
 	})
 	if err != nil {
