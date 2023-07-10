@@ -138,7 +138,7 @@ func (p *ComposerProject) PullImages(
 	imagesDir := filepath.Join(root, "images")
 	os.MkdirAll(imagesDir, 0777)
 	for imageRef := range uniqueImageRefs {
-		_, err := SaveImageToFile(ctx, moby, imageRef, imagesDir)
+		_, err := SaveImageToFile(ctx, imageRef /*FIXME:*/, "linux/amd64", imagesDir, nil)
 		if err != nil {
 			return fmt.Errorf("cannot pull and save image %q, reason: %w", imageRef, err)
 		}

@@ -101,7 +101,9 @@ func newRootCmd() (rootCmd *cobra.Command) {
 	}
 	rootCmd.Flags().StringP(outnameFlag, "o", "",
 		"mandatory: name of app package file to write")
-	rootCmd.MarkFlagRequired("output")
+	if err := rootCmd.MarkFlagRequired("output"); err != nil {
+		panic(err)
+	}
 
 	rootCmd.Flags().String(appVersionFlag, "",
 		"app semantic version, defaults to git describe")

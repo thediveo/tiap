@@ -13,14 +13,33 @@
 package tiap
 
 import (
+	"bytes"
 	"testing"
 	"time"
+
+	"github.com/sirupsen/logrus"
+	"golang.org/x/time/rate"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
 var slowSpec = NodeTimeout(120 * time.Second)
+
+// rate limit pulling images, especially when multiple unit tests need to pull
+// the same image over and over again.
+var pullLimiter = rate.NewLimiter(rate.Every(1*time.Second), 1)
+
+func GrabLog(level logrus.Level) *bytes.Buffer {
+	buff := &bytes.Buffer{}
+	origLevel := logrus.GetLevel()
+	logrus.SetOutput(buff)
+	logrus.SetLevel(level)
+	DeferCleanup(func() {
+		logrus.SetLevel(origLevel)
+	})
+	return buff
+}
 
 func TestLinuxKernelNamespaces(t *testing.T) {
 	RegisterFailHandler(Fail)
