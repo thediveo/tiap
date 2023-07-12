@@ -133,6 +133,28 @@ var _ = Describe("IE app composer projects", Ordered, func() {
 			Expect(p.Images()).Error().To(HaveOccurred())
 		})
 
+		It("reports missing or incorrect service memory limit", func() {
+			GrabLog(logrus.InfoLevel)
+			p := &ComposerProject{yaml: map[string]any{
+				"services": map[string]any{
+					"foo": map[string]any{
+						"image": "busybox:earliest",
+					},
+				},
+			}}
+			Expect(p.Images()).Error().To(MatchError(ContainSubstring("lacks mem_limit")))
+
+			p = &ComposerProject{yaml: map[string]any{
+				"services": map[string]any{
+					"foo": map[string]any{
+						"image":     "busybox:earliest",
+						"mem_limit": "11ft8",
+					},
+				},
+			}}
+			Expect(p.Images()).Error().To(MatchError(ContainSubstring("invalid mem_limit")))
+		})
+
 		It("reports reading problems", func() {
 			Expect(NewComposerProject("/")).Error().To(HaveOccurred())
 			Expect(NewComposerProject("composer_test.go")).Error().To(HaveOccurred())
