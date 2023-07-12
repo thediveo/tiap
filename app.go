@@ -27,7 +27,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/moby/moby/client"
+	"github.com/google/go-containerregistry/pkg/v1/daemon"
 	"github.com/otiai10/copy"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/exp/slices"
@@ -110,14 +110,20 @@ func (a *App) Done() {
 // notes (if any). This automatically sets the versionId to some suitable value
 // behind the scenes. At least we think that it might be a suitable versionId
 // value.
-func (a *App) SetDetails(semver string, releasenotes string) error {
+func (a *App) SetDetails(semver string, releasenotes string, platform string) error {
 	return setDetails(
 		filepath.Join(a.tmpDir, "detail.json"),
 		a.repo,
-		semver, releasenotes)
+		semver, releasenotes, platform)
 }
 
-func setDetails(path string, repo string, semver string, releasenotes string) error {
+func setDetails(
+	path string,
+	repo string,
+	semver string,
+	releasenotes string,
+	platform string,
+) error {
 	detailJSON, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("cannot read detail.json, reason: %w", err)
@@ -148,6 +154,10 @@ func setDetails(path string, repo string, semver string, releasenotes string) er
 
 	details["releaseNotes"] = releasenotes
 
+	if platform != "" && platform != "linux/amd64" {
+		details["platform"] = platform // TODO: is the way it should be used?
+	}
+
 	detailJSON, err = json.Marshal(details)
 	if err != nil {
 		return fmt.Errorf("cannot JSONize detail information, reason: %w", err)
@@ -162,28 +172,22 @@ func setDetails(path string, repo string, semver string, releasenotes string) er
 // PullAndWriteCompose analyzes the project's compose deployment in order to
 // pull the required container images, then saves the images into the temporary
 // stage, and writes composer project.
-func (a *App) PullAndWriteCompose(ctx context.Context, dockerHost string) error {
+func (a *App) PullAndWriteCompose(
+	ctx context.Context,
+	platform string,
+	optclient daemon.Client,
+) error {
 	log.Info("🚚  pulling images and writing composer project...")
-	opts := []client.Opt{
-		client.WithAPIVersionNegotiation(),
-	}
-	if dockerHost != "" {
-		opts = append(opts, client.WithHost(dockerHost))
-	} else {
-		opts = append(opts, client.WithHostFromEnv())
-	}
-	moby, err := client.NewClientWithOpts(opts...)
-	if err != nil {
-		return fmt.Errorf("cannot contact Docker daemon, reason: %w", err)
-	}
 	serviceImages, err := a.project.Images()
 	if err != nil {
 		return err
 	}
 	err = a.project.PullImages(
-		ctx, moby,
+		ctx,
 		serviceImages,
+		platform,
 		filepath.Join(a.tmpDir, a.repo),
+		optclient,
 	)
 	if err != nil {
 		return err

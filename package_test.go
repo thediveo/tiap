@@ -13,14 +13,53 @@
 package tiap
 
 import (
+	"context"
+	"os"
 	"testing"
 	"time"
 
+	"github.com/moby/moby/client"
+	"github.com/sirupsen/logrus"
+	"golang.org/x/time/rate"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	. "github.com/thediveo/success"
 )
 
 var slowSpec = NodeTimeout(120 * time.Second)
+
+// rate limit pulling images, especially when multiple unit tests need to pull
+// the same image over and over again.
+var pullLimiter = rate.NewLimiter(rate.Every(2*time.Second), 1)
+
+func GrabLog(level logrus.Level) {
+	origLevel := logrus.GetLevel()
+	logrus.SetOutput(GinkgoWriter)
+	logrus.SetLevel(level)
+	DeferCleanup(func() {
+		logrus.SetLevel(origLevel)
+		logrus.SetOutput(os.Stderr)
+	})
+}
+
+const (
+	canaryImageRef = "public.ecr.aws/docker/library/busybox:latest"
+)
+
+var canaryPlatform string
+
+var _ = BeforeSuite(func(ctx context.Context) {
+	moby := Successful(client.NewClientWithOpts(client.WithAPIVersionNegotiation()))
+	defer moby.Close()
+	info := Successful(moby.Info(ctx))
+	arch := info.Architecture
+	switch arch {
+	case "x86_64":
+		arch = "amd64"
+	}
+	canaryPlatform = info.OSType + "/" + arch
+})
 
 func TestLinuxKernelNamespaces(t *testing.T) {
 	RegisterFailHandler(Fail)

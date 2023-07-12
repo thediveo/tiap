@@ -15,125 +15,161 @@
 package tiap
 
 import (
-	"bufio"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/errdefs"
-	"github.com/moby/moby/client"
+	"github.com/google/go-containerregistry/pkg/legacy/tarball"
+	"github.com/google/go-containerregistry/pkg/name"
+	ociv1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/daemon"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	log "github.com/sirupsen/logrus"
 )
 
-// SaveImageToFile optionally pulls the referenced image (“imageref”) if not
-// locally present and then saves the image to local storage in the specified
-// directory “savedir”. The name of the image file will be the image's SHA256 ID
-// without the “sha256:” prefix (and not to be confused with repository SHA256
-// digests). SaveImageToFile either reports success or a more specific error.
+// DefaultRegistry points to the Docker registry.
+var DefaultRegistry = name.DefaultRegistry
+
+// SaveImageToFile checks if the referenced image (“imageref”) is either
+// available locally for the specific platform or otherwise attempts to pull it,
+// and then immediately saves it to local storage in the specified directory
+// “savedir”. The name of the image file will be the image reference's SHA256.
+// SaveImageToFile either reports success or a more specific error.
+//
+// Please note that an attempt to find the referenced image with the local
+// daemon is only made when a non-nil client has been passed in. Otherwise,
+// always a pull is attempted only.
+//
+// [go-containerregistry]: https://github.com/google/go-containerregistry
 func SaveImageToFile(ctx context.Context,
-	moby *client.Client,
 	imageref string,
+	platform string,
 	savedir string,
+	optclient daemon.Client,
 ) (filename string, err error) {
-	// Only pull if image reference isn't already available locally.
-	_, _, err = moby.ImageInspectWithRaw(ctx, imageref)
-	if errdefs.IsNotFound(err) {
-		if err = pullImage(ctx, moby, imageref); err != nil {
-			return "", err
-		}
-	} else if err != nil {
-		return "", fmt.Errorf("cannot check local images, reason: %w", err)
+	imgRef, err := name.ParseReference(
+		imageref, name.WithDefaultRegistry(DefaultRegistry))
+	if err != nil {
+		return "", fmt.Errorf("invalid image reference %q: %w",
+			imageref, err)
 	}
-	// Image is locally available now, so get its image SHA256 digest in order
-	// to determine the filename that is to receive the container image data.
-	imageDetails, _, err := moby.ImageInspectWithRaw(ctx, imageref)
+
+	wantPlatform, err := ociv1.ParsePlatform(platform)
+	if err != nil {
+		return "", fmt.Errorf("invalid platform %q: %w",
+			platform, err)
+	}
+
+	image, err := hasLocalImage(ctx, optclient, imgRef, wantPlatform)
 	if err != nil {
 		return "", err
 	}
-	imageID := imageDetails.ID
-	if !strings.HasPrefix(imageID, "sha256:") {
-		return "", fmt.Errorf("image ID should be an sha256 digest, but instead is %q",
-			imageID)
+	if image == nil {
+		image, err = pullRemoteImage(ctx, imgRef, wantPlatform)
+		if err != nil {
+			return "", err
+		}
 	}
-	// The image save filename is the SHA256 of the imageref.
+
+	// The image save filename is the SHA256 of the imageref(!).
 	digester := sha256.New()
 	_, _ = digester.Write([]byte(imageref))
 	filename = hex.EncodeToString(digester.Sum(nil)) + ".tar"
-	// Copy the container image data from Docker's image storage into the file
-	// system path we were told.
-	imageFilename := filepath.Join(savedir, filename)
-	imageReader, err := moby.ImageSave(ctx, []string{imageref})
+
+	// Write the container image data into the file system path we were told.
+	imageSavePathName := filepath.Join(savedir, filename)
+	f, err := os.Create(imageSavePathName)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("cannot create image file %q, reason: %w",
+			imageSavePathName, err)
 	}
-	defer imageReader.Close()
-	imageFile, err := os.Create(imageFilename)
+	defer f.Close()
+	if err := tarball.Write(imgRef, image, f); err != nil {
+		return "", fmt.Errorf("cannot write image file %q, reason: %w",
+			imageSavePathName, err)
+	}
+	totalWritten, err := f.Seek(0, io.SeekCurrent)
 	if err != nil {
-		return "", fmt.Errorf("cannot create file for image with ID %s, reason: %w",
-			filename[:12], err)
+		return "", fmt.Errorf("cannot determine length of written image file %q, reason: %w",
+			imageSavePathName, err)
 	}
-	defer imageFile.Close()
-	totalWritten, err := io.Copy(imageFile, imageReader)
-	if err != nil {
-		return "", fmt.Errorf("cannot save image with ID %s, reason: %w",
-			filename[:12], err)
-	}
-	log.Info(fmt.Sprintf("   🖭  written %d bytes of 🖼  image with ID %s", totalWritten, filename[:12]))
+	log.Info(fmt.Sprintf("   🖭  written %d bytes of 🖼  image with ID %s",
+		totalWritten, filename[:12]))
 	return
 }
 
-// pullImage checks with the referenced registry, if any, to determine whether
-// it needs to pull the referenced image.
-func pullImage(ctx context.Context, moby *client.Client, imageref string) error {
-	// Start the image pull process (if necessary). The events will be
-	// individual lines of JSON text.
-	events, err := moby.ImagePull(ctx, imageref, types.ImagePullOptions{})
+// hasLocalImage returns the referenced image for the specified platform, if
+// available locally and using the specified daemon client. Otherwise, it
+// returns a nil image and nil error if nothing was found. hasLocalImage also
+// returns a nil image together with a nil error in case no daemon client was
+// passed. It returns a non-nil error in case an error happened that should not
+// be ignored.
+func hasLocalImage(
+	ctx context.Context,
+	client daemon.Client,
+	iref name.Reference,
+	wantPlatform *ociv1.Platform,
+) (ociv1.Image, error) {
+	if client == nil {
+		return nil, nil
+	}
+	// Is the correct image already locally available?
+	image, err := daemon.Image(iref,
+		daemon.WithContext(ctx), daemon.WithClient(client))
 	if err != nil {
-		return err
-	}
-	defer events.Close()
-	// Now read JSON-encoded events from the event stream until we reach EOF:
-	// this at the same time signals to us that the operation is finished (for
-	// good or bad).
-	scanner := bufio.NewScanner(events)
-	for scanner.Scan() {
-		var ev PullEvent
-		if err := json.Unmarshal(scanner.Bytes(), &ev); err != nil {
-			return fmt.Errorf("cannot process pull event stream, reason: %w", err)
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
-		switch ev.Status {
-		case "Downloading", "Extracting":
-			log.Info(fmt.Sprintf("Pull - %s %d/%d",
-				ev.Status, ev.ProgressDetail.Current, ev.ProgressDetail.Total))
-		default:
-			if ev.ID != "" {
-				log.Info(fmt.Sprintf("Pull - %s: %s", ev.Status, ev.ID))
-			} else {
-				log.Info(fmt.Sprintf("Pull - %s", ev.Status))
+		return nil, nil // stay silent; no daemon, no such image, no whatever, ...
+	}
+	config, err := image.ConfigFile()
+	if err != nil {
+		// having the image matching the ref, but not being able to determine
+		// its configuration is definitely something we need to report and
+		// cannot ignore.
+		return nil, fmt.Errorf("cannt determine configuration of image %q, reason: %w",
+			iref.String(), err)
+	}
+	if hasPf := config.Platform(); hasPf == nil || !hasPf.Satisfies(*wantPlatform) {
+		return nil, nil
+	}
+	return image, nil
+}
+
+// pullRemoteImage pull the specified image for the specified platform from a
+// (remote) registry.
+func pullRemoteImage(
+	ctx context.Context,
+	imageref name.Reference,
+	wantPlatform *ociv1.Platform,
+) (ociv1.Image, error) {
+	newsch := make(chan ociv1.Update, 16)
+	// log (to console) any update information we get while pulling the image
+	// from a remote registry. We wait for updates until the channel gets closed
+	// and we read zero value information.
+	go func() {
+		var zero ociv1.Update
+		for {
+			news := <-newsch
+			if news == zero {
+				return // only when news channel has been closed and drained
 			}
+			log.Info(fmt.Sprintf("Pull - %s %d/%d",
+				imageref.String(), news.Complete, news.Total))
 		}
+	}()
+	image, err := remote.Image(imageref,
+		remote.WithContext(ctx),
+		remote.WithPlatform(*wantPlatform),
+		remote.WithProgress(newsch))
+	close(newsch)
+	if err != nil {
+		return nil, fmt.Errorf("cannot pull image %s, reason: %w",
+			imageref.String(), err)
 	}
-	return nil
-}
-
-// PullEvent sent by the Docker API for pulling images, fs layers, downloading,
-// et cetera, as emitted by the Docker API client's ImagePull method.
-type PullEvent struct {
-	ID             string         `json:"id"`
-	Status         string         `json:"status"`
-	ProgressDetail ProgressDetail `json:"progressDetail"`
-}
-
-// ProgressDetail used while downloading and extracting layers in order to
-// report the specific progress in terms of bytes.
-type ProgressDetail struct {
-	Current uint `json:"current"`
-	Total   uint `json:"total"`
+	return image, nil
 }
