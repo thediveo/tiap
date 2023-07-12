@@ -2,7 +2,7 @@
 
 [![PkgGoDev](https://img.shields.io/badge/-reference-blue?logo=go&logoColor=white&labelColor=505050)](https://pkg.go.dev/github.com/thediveo/tiap)
 [![GitHub](https://img.shields.io/github/license/thediveo/tiap)](https://img.shields.io/github/license/thediveo/tiap)
-![Coverage](https://img.shields.io/badge/Coverage-91.5%25-brightgreen)
+![Coverage](https://img.shields.io/badge/Coverage-90.5%25-brightgreen)
 [![Go Report Card](https://goreportcard.com/badge/github.com/thediveo/tiap)](https://goreportcard.com/report/github.com/thediveo/tiap)
 
 `tiap` is a small Go module and CLI tool to easily create Industrial Edge `.app`
@@ -20,22 +20,42 @@ users into their IEM systems.
 - defaults to using `git describe` to set the app version, or set explicitly
   using `--app-version $SEMVER`. Even accepts `v` prefixed semvers and then
   drops the prefix.
+
 - talks to the Docker API _socket_, so there's no need to either reconfigure the
   Docker daemon in your dev system or in pipelines, or to fiddle around with
   `socat` to reroute a localhost TCP port to the Docker socker.
+
+  However, in view of supporting IE apps for different (CPU) architectures we
+  recommend to never package image files from the local daemon, but instead to
+  only pull from a (remote) registry. For this, we recommend using
+  `--pull-always`.
+
+  ```bash
+  go run github.com/thediveo/tiap/cmd/tiap@latest \
+    -o hellorld.app --pull-always hellorldapp/
+  ```
+  
 - no need to deal with stateful IE app publisher workspaces.
+
 - small footprint.
 
-Please note that `tiap` doesn't lint the Docker composer project, except for:
+Please note that `tiap` **doesn't lint** the Docker composer project, except
+for:
 - rejecting `:latest` image references (yes, we're more strict than IE App
-    Publisher here for a reason),
-- enforcing `mem_limit` service configuration.
+    Publisher here for reasons that still hurt),
+- enforcing `mem_limit` service configuration (as this seems to be the most
+  common stumbling block in a survey of one sample).
 
 ## CLI
+
+The command
 
 ```bash
 tiap -h
 ```
+
+outputs
+
 ```text
 tiap isn't app publisher, but packages Industrial Edge .app files anyway
 
@@ -47,8 +67,10 @@ Flags:
   -h, --help                   help for tiap
   -H, --host string            Docker daemon socket to connect to
   -o, --out string             mandatory: name of app package file to write
+  -p, --platform string        platform to build app for (default "linux/amd64")
+      --pull-always            always pull image from remote registry, never use local images
       --release-notes string   release notes
-  -v, --version                version for tiap
+  -v, --version
 ```
 
 ## Hellorld Demo
@@ -61,8 +83,11 @@ only.
 ```bash
 # while in the toplevel directory of this repository...
 go run github.com/thediveo/tiap/cmd/tiap@latest \
-    -o hellorld.app hellorldapp/
+    -o hellorld.app --pull-always testdata/app/
 ```
+
+outputs
+
 ```text
 INFO[0000] 🗩  tiap ... isn't app publisher              
 INFO[0000]    commit a56f7926 (modified)                
@@ -100,7 +125,7 @@ checked into your git repository.
 
 See also `testdata/app` for our canonical "Hellorld!" example.
 
-The sweet size for app icons seem to be 150⨉150 pixels and they must be in PNG
+The sweet size for app icons seem to be 150×150 pixels and they must be in PNG
 format.
 
 ## Copyright and License
