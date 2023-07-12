@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/moby/moby/client"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/thediveo/tiap"
@@ -33,8 +34,17 @@ const (
 	outnameFlag      = "out"
 	appVersionFlag   = "app-version"
 	releaseNotesFlag = "release-notes"
+	platformFlag     = "platform"
+	pullAlwaysFlag   = "pull-always"
 	dockerHostFlag   = "host"
 )
+
+func successfully[R any](r R, err error) R {
+	if err != nil {
+		panic(err)
+	}
+	return r
+}
 
 func buildInfo(info *debug.BuildInfo, key string) string {
 	idx := slices.IndexFunc(info.Settings,
@@ -58,7 +68,7 @@ func newRootCmd() (rootCmd *cobra.Command) {
 			log.Info(fmt.Sprintf("   %s", rootCmd.Version))
 			log.Info("⚖  Apache 2.0 License")
 
-			appSemver, _ := rootCmd.Flags().GetString(appVersionFlag)
+			appSemver := successfully(rootCmd.Flags().GetString(appVersionFlag))
 			if appSemver == "" {
 				out, err := exec.Command("git", "describe").CombinedOutput()
 				if err != nil {
@@ -73,7 +83,7 @@ func newRootCmd() (rootCmd *cobra.Command) {
 					appSemver, err)
 			}
 
-			releaseNotes, _ := rootCmd.Flags().GetString(releaseNotesFlag)
+			releaseNotes := successfully(rootCmd.Flags().GetString(releaseNotesFlag))
 
 			app, err := tiap.NewApp(args[0])
 			if err != nil {
@@ -81,18 +91,42 @@ func newRootCmd() (rootCmd *cobra.Command) {
 			}
 			defer app.Done()
 
-			err = app.SetDetails(appSemver, releaseNotes)
+			platform := successfully(rootCmd.Flags().GetString(platformFlag))
+			log.Infof("🚊  platform: %q", platform)
+
+			err = app.SetDetails(appSemver, releaseNotes, platform)
 			if err != nil {
 				return err
 			}
 
-			host, _ := rootCmd.Flags().GetString(dockerHostFlag)
-			err = app.PullAndWriteCompose(context.Background(), host)
+			pullAlways := successfully(rootCmd.Flags().GetBool(pullAlwaysFlag))
+			var moby *client.Client
+			if !pullAlways {
+				dockerHost := successfully(rootCmd.Flags().GetString(dockerHostFlag))
+				opts := []client.Opt{
+					client.WithAPIVersionNegotiation(),
+				}
+				if dockerHost != "" {
+					opts = append(opts, client.WithHost(dockerHost))
+				} else {
+					opts = append(opts, client.WithHostFromEnv())
+				}
+				moby, err = client.NewClientWithOpts(opts...)
+				if err != nil {
+					return fmt.Errorf("cannot contact Docker daemon, reason: %w", err)
+				}
+				defer moby.Close()
+			}
+
+			err = app.PullAndWriteCompose(
+				context.Background(),
+				platform,
+				moby)
 			if err != nil {
 				return err
 			}
 
-			outname, _ := rootCmd.Flags().GetString(outnameFlag)
+			outname := successfully(rootCmd.Flags().GetString(outnameFlag))
 			if filepath.Ext(outname) == "" {
 				outname = outname + ".app"
 			}
@@ -101,7 +135,7 @@ func newRootCmd() (rootCmd *cobra.Command) {
 	}
 	rootCmd.Flags().StringP(outnameFlag, "o", "",
 		"mandatory: name of app package file to write")
-	if err := rootCmd.MarkFlagRequired("output"); err != nil {
+	if err := rootCmd.MarkFlagRequired(outnameFlag); err != nil {
 		panic(err)
 	}
 
@@ -110,6 +144,12 @@ func newRootCmd() (rootCmd *cobra.Command) {
 
 	rootCmd.Flags().String(releaseNotesFlag, "",
 		"release notes")
+
+	rootCmd.Flags().StringP(platformFlag, "p", thisPlatform(),
+		"platform to build app for")
+
+	rootCmd.Flags().Bool(pullAlwaysFlag, false,
+		"always pull image from remote registry, never use local images")
 
 	rootCmd.Flags().StringP(dockerHostFlag, "H", "",
 		"Docker daemon socket to connect to")

@@ -23,7 +23,7 @@ import (
 
 	"github.com/distribution/distribution/reference"
 	"github.com/docker/go-units"
-	"github.com/moby/moby/client"
+	"github.com/google/go-containerregistry/pkg/v1/daemon"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 )
@@ -123,9 +123,10 @@ type nada struct{} // not "any"
 // “repository” folder.
 func (p *ComposerProject) PullImages(
 	ctx context.Context,
-	moby *client.Client,
 	serviceimgs ServiceImages,
+	platform string,
 	root string,
+	optclient daemon.Client,
 ) error {
 	// As multiple services might reference the same container image and we must
 	// pull an image only once we first determine the unique image references.
@@ -138,7 +139,7 @@ func (p *ComposerProject) PullImages(
 	imagesDir := filepath.Join(root, "images")
 	os.MkdirAll(imagesDir, 0777)
 	for imageRef := range uniqueImageRefs {
-		_, err := SaveImageToFile(ctx, imageRef /*FIXME:*/, "linux/amd64", imagesDir, nil)
+		_, err := SaveImageToFile(ctx, imageRef, platform, imagesDir, nil)
 		if err != nil {
 			return fmt.Errorf("cannot pull and save image %q, reason: %w", imageRef, err)
 		}

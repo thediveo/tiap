@@ -19,6 +19,8 @@ import (
 	"encoding/json"
 	"os"
 
+	"github.com/sirupsen/logrus"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	. "github.com/thediveo/once"
@@ -30,25 +32,26 @@ var _ = Describe("IE app building", func() {
 	Context("IE app details", func() {
 
 		It("rejects a missing or app details", func() {
-			Expect(setDetails("testdata/details/malformed/missing.json", "", "", "")).NotTo(Succeed())
-			Expect(setDetails("testdata/details/malformed/detail.json", "", "", "")).NotTo(Succeed())
+			Expect(setDetails("testdata/details/malformed/missing.json", "", "", "", "")).NotTo(Succeed())
+			Expect(setDetails("testdata/details/malformed/detail.json", "", "", "", "")).NotTo(Succeed())
 		})
 
 		It("updates app details with version", func() {
+			GrabLog(logrus.InfoLevel)
 			const semver = "11.22.33-foobar0"
 			details := Successful(os.ReadFile("testdata/details/good/detail.json"))
 			tmpDetails := Successful(os.CreateTemp("", "details-*.json"))
 			tmpPath := tmpDetails.Name()
 			closeOnce := Once(func() {
 				tmpDetails.Close()
-			})
+			}).Do
 			defer func() {
-				closeOnce.Do()
+				closeOnce()
 				Expect(os.Remove(tmpPath)).To(Succeed())
 			}()
 			Expect(tmpDetails.Write(details)).Error().To(Succeed())
-			closeOnce.Do()
-			Expect(setDetails(tmpPath, "hellorld", semver, "notes")).To(Succeed())
+			closeOnce()
+			Expect(setDetails(tmpPath, "hellorld", semver, "notes", "")).To(Succeed())
 			details = Successful(os.ReadFile(tmpPath))
 			var d map[string]any
 			Expect(json.Unmarshal([]byte(details), &d)).To(Succeed())
@@ -72,16 +75,19 @@ var _ = Describe("IE app building", func() {
 		})
 
 		It("reports when unable to read template files", func() {
+			GrabLog(logrus.InfoLevel)
 			Expect(NewApp("/nothing-nada-nil")).Error().To(MatchError(
 				ContainSubstring("cannot copy app template structure")))
 		})
 
 		It("reports missing repo directory", func() {
+			GrabLog(logrus.InfoLevel)
 			Expect(NewApp("testdata/brokenapp")).Error().To(MatchError(
 				ContainSubstring("project lacks Docker compose")))
 		})
 
 		It("reports when unable to load malformed composer project", func() {
+			GrabLog(logrus.InfoLevel)
 			Expect(NewApp("testdata/brokencompose")).Error().To(MatchError(
 				ContainSubstring("malformed composer project")))
 		})
@@ -91,12 +97,14 @@ var _ = Describe("IE app building", func() {
 	When("packaging", func() {
 
 		It("reports error when digests cannot be stored", func() {
+			GrabLog(logrus.InfoLevel)
 			a := &App{tmpDir: "/nowhere"}
 			Expect(a.Package("")).To(MatchError(
 				ContainSubstring("cannot create digests.json")))
 		})
 
 		It("reports error when app package cannot be created", func() {
+			GrabLog(logrus.InfoLevel)
 			a := &App{tmpDir: "testdata/app"}
 			Expect(a.Package("/nada-nothing-nil")).To(MatchError(
 				ContainSubstring("cannot create IE app package file")))
@@ -104,27 +112,23 @@ var _ = Describe("IE app building", func() {
 
 	})
 
-	It("allows setting the Docker host for pulling", func(ctx context.Context) {
-		a := Successful(NewApp("testdata/app"))
-		defer a.Done()
-		Expect(a.PullAndWriteCompose(ctx, "ducker://")).To(MatchError(
-			ContainSubstring("cannot contact Docker daemon")))
-	})
-
 	It("reports cancelled pull context", func() {
+		GrabLog(logrus.InfoLevel)
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 		a := Successful(NewApp("testdata/app"))
 		defer a.Done()
-		Expect(a.PullAndWriteCompose(ctx, "")).To(MatchError(
+		Expect(a.PullAndWriteCompose(ctx, canaryPlatform, nil)).To(MatchError(
 			ContainSubstring("context canceled")))
 	})
 
 	It("loads an app template, sets details, pulls, and packages", slowSpec, func(ctx context.Context) {
+		GrabLog(logrus.InfoLevel)
 		a := Successful(NewApp("testdata/app"))
 		defer a.Done()
-		Expect(a.SetDetails("1.2.3-faselblah", "")).To(Succeed())
-		Expect(a.PullAndWriteCompose(ctx, "")).To(Succeed())
+		Expect(a.SetDetails("1.2.3-faselblah", "", "")).To(Succeed())
+		Expect(pullLimiter.Wait(ctx)).To(Succeed())
+		Expect(a.PullAndWriteCompose(ctx, canaryPlatform, nil)).To(Succeed())
 		Expect(a.Package("/tmp/hellorld.app")).To(Succeed())
 	})
 

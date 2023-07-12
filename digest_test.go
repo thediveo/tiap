@@ -20,10 +20,15 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/sirupsen/logrus"
 	. "github.com/thediveo/success"
 )
 
 var _ = Describe("digesting digests", Ordered, func() {
+
+	BeforeEach(func() {
+		GrabLog(logrus.InfoLevel)
+	})
 
 	It("calculates correct digests of files", func() {
 		digests := Successful(FileDigests("testdata/digests"))

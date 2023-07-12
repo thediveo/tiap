@@ -32,14 +32,9 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	. "github.com/thediveo/once"
 	. "github.com/thediveo/success"
 )
-
-const (
-	canaryImageRef = "public.ecr.aws/docker/library/busybox:latest"
-)
-
-var canaryPlatform string
 
 var _ = Describe("image pulling and saving", Ordered, func() {
 
@@ -48,13 +43,6 @@ var _ = Describe("image pulling and saving", Ordered, func() {
 	BeforeAll(func(ctx context.Context) {
 		moby = Successful(client.NewClientWithOpts(client.WithAPIVersionNegotiation()))
 		DeferCleanup(func() { moby.Close() })
-		info := Successful(moby.Info(ctx))
-		arch := info.Architecture
-		switch arch {
-		case "x86_64":
-			arch = "amd64"
-		}
-		canaryPlatform = info.OSType + "/" + arch
 	})
 
 	var tmpDirPath string
@@ -96,6 +84,7 @@ var _ = Describe("image pulling and saving", Ordered, func() {
 		})
 
 		It("reports when image cannot be saved", func(ctx context.Context) {
+			Expect(pullLimiter.Wait(ctx)).To(Succeed())
 			Expect(SaveImageToFile(ctx, canaryImageRef, canaryPlatform, "/nada-nothing-nil", nil)).Error().
 				To(MatchError(ContainSubstring("cannot create image file")))
 
@@ -120,9 +109,13 @@ var _ = Describe("image pulling and saving", Ordered, func() {
 			r := Successful(moby.ImagePull(ctx, canaryImageRef, types.ImagePullOptions{
 				Platform: canaryPlatform,
 			}))
-			defer r.Close()
+			closeOnce := Once(func() {
+				r.Close()
+			}).Do
+			defer closeOnce()
 			buff := &bytes.Buffer{}
 			Expect(io.Copy(buff, r)).Error().NotTo(HaveOccurred())
+			closeOnce()
 			img := Successful(hasLocalImage(ctx, moby,
 				Successful(name.ParseReference(canaryImageRef)),
 				Successful(ociv1.ParsePlatform(canaryPlatform))))
@@ -132,7 +125,7 @@ var _ = Describe("image pulling and saving", Ordered, func() {
 	})
 
 	It("grabs an image, saves it to a .tar file and names it after the SHA256 of the image ref", slowSpec, func(ctx context.Context) {
-		logbuff := GrabLog(logrus.DebugLevel)
+		GrabLog(logrus.DebugLevel)
 
 		Expect(pullLimiter.Wait(ctx)).To(Succeed())
 		filename, err := SaveImageToFile(ctx,
@@ -140,9 +133,6 @@ var _ = Describe("image pulling and saving", Ordered, func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(filename).To(MatchRegexp(`^[0-9a-z]{64}\.tar$`))
 		Expect(filepath.Join(tmpDirPath, filename)).To(BeAnExistingFile())
-
-		Expect(logbuff).To(MatchRegexp(
-			`written \d\d+ bytes of .* image with ID .+`))
 
 		digester := sha256.New()
 		digester.Write([]byte(canaryImageRef))

@@ -19,15 +19,16 @@ import (
 	"context"
 	"os"
 
-	"github.com/moby/moby/client"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/sirupsen/logrus"
 	. "github.com/thediveo/success"
 )
 
 var _ = Describe("IE app composer projects", Ordered, func() {
 
 	It("determines service images", func() {
+		GrabLog(logrus.InfoLevel)
 		p := Successful(NewComposerProject("testdata/composer/hellorld/docker-compose.yml"))
 		imgs := Successful(p.Images())
 		Expect(imgs).To(And(
@@ -45,24 +46,27 @@ var _ = Describe("IE app composer projects", Ordered, func() {
 	})
 
 	It("rejects latest image references in projects", func() {
+		GrabLog(logrus.InfoLevel)
 		p := Successful(LoadComposerProject("testdata/composer/latest"))
 		Expect(p.Images()).Error().To(MatchError(MatchRegexp(`service .* attempts to use latest`)))
 	})
 
-	It("loads project, pulls images, pins images, writes back", slowSpec, func(ctx context.Context) {
+	It("loads project, pulls images, writes back", slowSpec, func(ctx context.Context) {
+		GrabLog(logrus.InfoLevel)
 
 		By("setting up an empty transient testing directory")
 		tmpDirPath := Successful(os.MkdirTemp("", "tiap-test-*"))
 		defer os.RemoveAll(tmpDirPath)
-		moby := Successful(client.NewClientWithOpts(client.WithAPIVersionNegotiation()))
-		defer moby.Close()
+
+		GrabLog(logrus.InfoLevel)
 
 		By("loading a composer project")
 		p := Successful(NewComposerProject("testdata/composer/hellorld/docker-compose.yml"))
 
 		By("determining and pulling referenced images")
+		Expect(pullLimiter.Wait(ctx)).To(Succeed())
 		imgs := Successful(p.Images())
-		Expect(p.PullImages(ctx, moby, imgs, tmpDirPath)).To(Succeed())
+		Expect(p.PullImages(ctx, imgs, canaryPlatform, tmpDirPath, nil)).To(Succeed())
 		Expect(imgs["bar"]).To(Equal(imgs["baz"]))
 	})
 
@@ -104,6 +108,7 @@ var _ = Describe("IE app composer projects", Ordered, func() {
 		})
 
 		It("reports invalid services in project", func() {
+			GrabLog(logrus.InfoLevel)
 			p := &ComposerProject{yaml: map[string]any{
 				"services": map[string]any{
 					"foo": 42,
