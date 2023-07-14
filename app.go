@@ -41,6 +41,10 @@ type App struct {
 	project    *ComposerProject
 }
 
+// DefaultIEAppArch is the denormalized platform architecture name of the
+// default "unnamed" architecture.
+const DefaultIEAppArch = "x86-64"
+
 // NewApp returns an IE App object initialized from the specified “template”
 // path.
 func NewApp(source string) (a *App, err error) {
@@ -110,11 +114,11 @@ func (a *App) Done() {
 // notes (if any). This automatically sets the versionId to some suitable value
 // behind the scenes. At least we think that it might be a suitable versionId
 // value.
-func (a *App) SetDetails(semver string, releasenotes string, platform string) error {
+func (a *App) SetDetails(semver string, releasenotes string, iearch string) error {
 	return setDetails(
 		filepath.Join(a.tmpDir, "detail.json"),
 		a.repo,
-		semver, releasenotes, platform)
+		semver, releasenotes, iearch)
 }
 
 func setDetails(
@@ -122,7 +126,7 @@ func setDetails(
 	repo string,
 	semver string,
 	releasenotes string,
-	platform string,
+	iearch string,
 ) error {
 	detailJSON, err := os.ReadFile(path)
 	if err != nil {
@@ -154,8 +158,8 @@ func setDetails(
 
 	details["releaseNotes"] = releasenotes
 
-	if platform != "" && platform != "linux/amd64" {
-		details["platform"] = platform // TODO: is the way it should be used?
+	if iearch != "" && iearch != DefaultIEAppArch {
+		details["platform"] = iearch // what actually is the architecture
 	}
 
 	detailJSON, err = json.Marshal(details)
