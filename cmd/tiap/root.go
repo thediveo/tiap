@@ -19,15 +19,19 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/containerd/containerd/platforms"
 	"github.com/moby/moby/client"
+	ispecsv1 "github.com/opencontainers/image-spec/specs-go/v1"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/thediveo/tiap"
 	"golang.org/x/exp/slices"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -46,6 +50,40 @@ func successfully[R any](r R, err error) R {
 	return r
 }
 
+func unerringly[R any](r R, err error) R {
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	return r
+}
+
+// thisPlatform returns a platform specification consisting of only the
+// architecture of the OS we're currently running on. We don't need the OS as
+// Industrial Edge supports Linux only.
+func thisPlatform() ispecsv1.Platform {
+	var utsname unix.Utsname
+	if err := unix.Uname(&utsname); err != nil {
+		copy(utsname.Machine[:], []byte(runtime.GOARCH))
+	}
+	return platforms.Normalize(ispecsv1.Platform{
+		Architecture: unix.ByteSliceToString(utsname.Machine[:]),
+	})
+}
+
+// denormalizes the OCI platform specification architecture into the Industrial
+// Edge usage. See
+// https://docs.eu1.edge.siemens.cloud/intro/glossary/glossary.html#x86-64 and
+// https://docs.eu1.edge.siemens.cloud/intro/glossary/glossary.html#arm64.
+func denormalize(p ispecsv1.Platform) ispecsv1.Platform {
+	p = platforms.Normalize(p)
+	switch p.Architecture {
+	case "amd64":
+		p.Architecture = tiap.DefaultIEAppArch
+	}
+	return p
+}
+
+// buildInfo returns the value of the specified key into the BuildSettings.
 func buildInfo(info *debug.BuildInfo, key string) string {
 	idx := slices.IndexFunc(info.Settings,
 		func(setting debug.BuildSetting) bool {
@@ -91,10 +129,23 @@ func newRootCmd() (rootCmd *cobra.Command) {
 			}
 			defer app.Done()
 
-			platform := successfully(rootCmd.Flags().GetString(platformFlag))
-			log.Infof("🚊  platform: %q", platform)
+			platform := unerringly(
+				platforms.Parse(successfully(rootCmd.Flags().GetString(platformFlag))))
+			if platform.OS != "linux" && platform.OS != runtime.GOOS {
+				// warn when the platform OS was (explicitly) set to something
+				// different than linux; we try to not warn in case tiap is run
+				// on a different OS and the platform has been specified only
+				// regarding its architecture, but not OS and the unwanted
+				// default OS has kicked in.
+				log.Warnf("enforcing \"linux\" platform OS")
+			}
+			platform.OS = "linux" // Industrial Edge supports only Linux.
+			log.Infof("🚊  normalized platform: %q", platforms.Format(platform))
 
-			err = app.SetDetails(appSemver, releaseNotes, platform)
+			appArch := denormalize(platform).Architecture
+			log.Infof("🚊  denormalized IE App architecture: %q", appArch)
+
+			err = app.SetDetails(appSemver, releaseNotes, appArch)
 			if err != nil {
 				return err
 			}
@@ -120,7 +171,7 @@ func newRootCmd() (rootCmd *cobra.Command) {
 
 			err = app.PullAndWriteCompose(
 				context.Background(),
-				platform,
+				platforms.Format(platform),
 				moby)
 			if err != nil {
 				return err
@@ -145,7 +196,8 @@ func newRootCmd() (rootCmd *cobra.Command) {
 	rootCmd.Flags().String(releaseNotesFlag, "",
 		"release notes")
 
-	rootCmd.Flags().StringP(platformFlag, "p", thisPlatform(),
+	p := thisPlatform()
+	rootCmd.Flags().StringP(platformFlag, "p", "linux/"+p.Architecture,
 		"platform to build app for")
 
 	rootCmd.Flags().Bool(pullAlwaysFlag, false,
