@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"strconv"
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
@@ -97,7 +98,7 @@ func buildInfo(info *debug.BuildInfo, key string) string {
 
 func newRootCmd() (rootCmd *cobra.Command) {
 	rootCmd = &cobra.Command{
-		Use:     "tiap [flags] [app-template-dir]",
+		Use:     "tiap -o FILE [flags] APP-TEMPLATE-DIR",
 		Short:   "tiap isn't app publisher, but packages Industrial Edge .app files anyway",
 		Version: `":latest"`, // sorry :p
 		Args:    cobra.ExactArgs(1),
@@ -121,7 +122,13 @@ func newRootCmd() (rootCmd *cobra.Command) {
 					appSemver, err)
 			}
 
-			releaseNotes := successfully(rootCmd.Flags().GetString(releaseNotesFlag))
+			rn := strings.Replace(
+				successfully(rootCmd.Flags().GetString(releaseNotesFlag)),
+				"\n", "\\n", -1)
+			releaseNotes, err := strconv.Unquote(`"` + rn + `"`)
+			if err != nil {
+				log.Fatalf("release notes %q: %s", successfully(rootCmd.Flags().GetString(releaseNotesFlag)), err.Error())
+			}
 
 			app, err := tiap.NewApp(args[0])
 			if err != nil {
@@ -194,7 +201,7 @@ func newRootCmd() (rootCmd *cobra.Command) {
 		"app semantic version, defaults to git describe")
 
 	rootCmd.Flags().String(releaseNotesFlag, "",
-		"release notes")
+		"release notes (interpreted as double-quoted Go string literal; use \\n, \\\", …)")
 
 	p := thisPlatform()
 	rootCmd.Flags().StringP(platformFlag, "p", "linux/"+p.Architecture,
@@ -204,7 +211,7 @@ func newRootCmd() (rootCmd *cobra.Command) {
 		"always pull image from remote registry, never use local images")
 
 	rootCmd.Flags().StringP(dockerHostFlag, "H", "",
-		"Docker daemon socket to connect to")
+		"Docker daemon socket to connect to (only if non-default and using local images)")
 
 	if info, biok := debug.ReadBuildInfo(); biok {
 		commit := buildInfo(info, "vcs.revision")
