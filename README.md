@@ -61,17 +61,17 @@ outputs
 tiap isn't app publisher, but packages Industrial Edge .app files anyway
 
 Usage:
-  tiap [flags] [app-template-dir]
+  tiap -o FILE [flags] APP-TEMPLATE-DIR
 
 Flags:
       --app-version string     app semantic version, defaults to git describe
   -h, --help                   help for tiap
-  -H, --host string            Docker daemon socket to connect to
+  -H, --host string            Docker daemon socket to connect to (only if non-default and using local images)
   -o, --out string             mandatory: name of app package file to write
   -p, --platform string        platform to build app for (default "linux/amd64")
       --pull-always            always pull image from remote registry, never use local images
-      --release-notes string   release notes
-  -v, --version
+      --release-notes string   release notes (interpreted as double-quoted Go string literal; use \n, \", …)
+  -v, --version                version for tiap
 ```
 
 ## Hellorld Demo
@@ -128,6 +128,39 @@ See also `testdata/app` for our canonical "Hellorld!" example.
 
 The sweet size for app icons seem to be 150×150 pixels and they must be in PNG
 format.
+
+## App Architecture/Platform
+
+In order to package an .app file for an architecture other than `amd64` (_cough_
+`x86-64` _cough_) use the `--platform` (or `-p`) flag. Its value can be a proper
+OCI platform specification, such as `linux/amd64`, or just an architecture
+specification like `arm64`. Aliases like `x86-64` are understood and
+automatically normalized.
+
+When packaging IE app files for multiple architectures we recommend – following
+Docker and OCI best practises – to only build multi-arch images and push them
+into a (sometimes private) registry. `tiap` will automatically pull the correct
+layers based on the platform setting.
+
+Please note that `tiap` will default to the architecture `tiap` itself _runs_
+on, unless explicitly told otherwise using `--platform`!
+
+Also, please note that the Industrial Edge platform requires the same app for
+multiple architectures to be fully separate apps: the "appId" in `detail.json`
+as well as the "app repository" (please see also the [Creating a new Edge
+App](https://docs.eu1.edge.siemens.cloud/develop_an_application/ieap/creating_a_new_edge_app.html)
+documentation) thus _must_ differ (the latter, for instance, `hellorld` and
+`hellorld-arm64`). 
+
+## App Release Notes
+
+The `--release-note` option interprets its value as a [double-quoted Go
+string](https://go.dev/ref/spec#String_literals). To add newlines, use the `\n`
+escape or alternatively pass a literal newline (consult your shell on how to
+pass literal newlines). Double quotes must be always escaped as `\"`.
+
+However, be careful that your shell isn't messing around with your escaping on
+its own.
 
 ## Copyright and License
 
