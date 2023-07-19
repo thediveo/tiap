@@ -36,28 +36,58 @@ var _ = Describe("IE app building", func() {
 			Expect(setDetails("testdata/details/malformed/detail.json", "", "", "", "")).NotTo(Succeed())
 		})
 
-		It("updates app details with version", func() {
-			GrabLog(logrus.InfoLevel)
+		When("setting and writing details", Ordered, func() {
+
 			const semver = "11.22.33-foobar0"
-			details := Successful(os.ReadFile("testdata/details/good/detail.json"))
-			tmpDetails := Successful(os.CreateTemp("", "details-*.json"))
-			tmpPath := tmpDetails.Name()
-			closeOnce := Once(func() {
-				tmpDetails.Close()
-			}).Do
-			defer func() {
+
+			var (
+				details []byte
+				tmpPath string
+			)
+
+			BeforeEach(func() {
+				GrabLog(logrus.InfoLevel)
+				details = Successful(os.ReadFile("testdata/details/good/detail.json"))
+				tmpDetails := Successful(os.CreateTemp("", "details-*.json"))
+				tmpPath = tmpDetails.Name()
+				closeOnce := Once(func() {
+					tmpDetails.Close()
+				}).Do
+				DeferCleanup(func() {
+					closeOnce()
+					Expect(os.Remove(tmpPath)).To(Succeed())
+				})
+				Expect(tmpDetails.Write(details)).Error().To(Succeed())
 				closeOnce()
-				Expect(os.Remove(tmpPath)).To(Succeed())
-			}()
-			Expect(tmpDetails.Write(details)).Error().To(Succeed())
-			closeOnce()
-			Expect(setDetails(tmpPath, "hellorld", semver, "notes", "")).To(Succeed())
-			details = Successful(os.ReadFile(tmpPath))
-			var d map[string]any
-			Expect(json.Unmarshal([]byte(details), &d)).To(Succeed())
-			Expect(d).To(HaveKeyWithValue("versionNumber", semver))
-			Expect(d).To(HaveKeyWithValue("versionId", MatchRegexp(`^[0-9a-zA-Z]{32}$`)))
-			Expect(d).To(HaveKeyWithValue("releaseNotes", "notes"))
+			})
+
+			It("updates app details with version", func() {
+				Expect(setDetails(tmpPath, "hellorld", semver, "notes", "")).To(Succeed())
+				details = Successful(os.ReadFile(tmpPath))
+				var d map[string]any
+				Expect(json.Unmarshal([]byte(details), &d)).To(Succeed())
+				Expect(d).To(HaveKeyWithValue("versionNumber", semver))
+				Expect(d).To(HaveKeyWithValue("versionId", MatchRegexp(`^[0-9a-zA-Z]{32}$`)))
+				Expect(d).To(HaveKeyWithValue("releaseNotes", "notes"))
+				Expect(d).NotTo(HaveKey("arch"))
+			})
+
+			It("doesn't set the default architecture", func() {
+				Expect(setDetails(tmpPath, "hellorld", semver, "notes", DefaultIEAppArch)).To(Succeed())
+				details = Successful(os.ReadFile(tmpPath))
+				var d map[string]any
+				Expect(json.Unmarshal([]byte(details), &d)).To(Succeed())
+				Expect(d).NotTo(HaveKey("arch"))
+			})
+
+			It("sets the default architecture based on (non-default) platform", func() {
+				Expect(setDetails(tmpPath, "hellorld", semver, "notes", "arm64")).To(Succeed())
+				details = Successful(os.ReadFile(tmpPath))
+				var d map[string]any
+				Expect(json.Unmarshal([]byte(details), &d)).To(Succeed())
+				Expect(d).To(HaveKeyWithValue("arch", "arm64"))
+			})
+
 		})
 
 	})

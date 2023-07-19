@@ -29,6 +29,7 @@ import (
 	ociv1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/moby/moby/client"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/sys/unix"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -61,33 +62,35 @@ var _ = Describe("image pulling and saving", Ordered, func() {
 
 	When("things go south", func() {
 
-		It("reports when context is cancelled", func() {
+		It("reports cancelled context", func() {
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
 			Expect(SaveImageToFile(ctx, canaryImageRef, canaryPlatform, tmpDirPath, nil)).Error().
 				To(MatchError(ContainSubstring("context canceled")))
 		})
 
-		It("reports when image reference is invalid", func(ctx context.Context) {
-			Expect(SaveImageToFile(ctx, ":", canaryPlatform, tmpDirPath, nil)).Error().
-				To(MatchError(ContainSubstring("invalid image reference")))
-
+		It("reports invalid platform", func(ctx context.Context) {
+			Expect(SaveImageToFile(ctx, canaryImageRef, "pl/a/t/t/f/o/r:m", tmpDirPath, nil)).Error().
+				To(MatchError(ContainSubstring("invalid platform")))
 		})
 
-		It("reports when image reference can't be found", func(ctx context.Context) {
+		It("reports an invalid image reference", func(ctx context.Context) {
+			Expect(SaveImageToFile(ctx, ":", canaryPlatform, tmpDirPath, nil)).Error().
+				To(MatchError(ContainSubstring("invalid image reference")))
+		})
+
+		It("reports unknown image reference", func(ctx context.Context) {
 			imageref := strings.TrimSuffix(canaryImageRef, ":latest") + ":earliest"
 			Expect(SaveImageToFile(ctx, imageref, canaryPlatform, tmpDirPath, nil)).Error().
 				To(MatchError(Or(
 					ContainSubstring("manifest unknown"),
 					ContainSubstring("MANIFEST_UNKNOWN"))))
-
 		})
 
 		It("reports when image cannot be saved", func(ctx context.Context) {
 			Expect(pullLimiter.Wait(ctx)).To(Succeed())
 			Expect(SaveImageToFile(ctx, canaryImageRef, canaryPlatform, "/nada-nothing-nil", nil)).Error().
 				To(MatchError(ContainSubstring("cannot create image file")))
-
 		})
 
 	})
@@ -102,6 +105,31 @@ var _ = Describe("image pulling and saving", Ordered, func() {
 			Expect(hasLocalImage(ctx, moby,
 				Successful(name.ParseReference(canaryImageRef)),
 				Successful(ociv1.ParsePlatform(canaryPlatform)))).To(BeNil())
+		})
+
+		It("reports cancelled context", func() {
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			Expect(hasLocalImage(ctx, moby,
+				Successful(name.ParseReference(canaryImageRef)),
+				Successful(ociv1.ParsePlatform(canaryPlatform)))).Error().To(HaveOccurred())
+		})
+
+		It("ignores unsatisfying platform", func(ctx context.Context) {
+			Expect(pullLimiter.Wait(ctx)).To(Succeed())
+			r := Successful(moby.ImagePull(ctx, canaryImageRef, types.ImagePullOptions{
+				Platform: canaryPlatform,
+			}))
+			closeOnce := Once(func() {
+				r.Close()
+			}).Do
+			defer closeOnce()
+			buff := &bytes.Buffer{}
+			Expect(io.Copy(buff, r)).Error().NotTo(HaveOccurred())
+			closeOnce()
+			Expect(hasLocalImage(ctx, moby,
+				Successful(name.ParseReference(canaryImageRef)),
+				Successful(ociv1.ParsePlatform("frumpf/rust-v")))).To(BeNil())
 		})
 
 		It("returns local image", func(ctx context.Context) {
@@ -137,6 +165,21 @@ var _ = Describe("image pulling and saving", Ordered, func() {
 		digester := sha256.New()
 		digester.Write([]byte(canaryImageRef))
 		Expect(filename).To(Equal(hex.EncodeToString(digester.Sum(nil)) + ".tar"))
+	})
+
+	It("reports image writing problems", func(ctx context.Context) {
+		// okay, this test is now getting slightly bizare, but only slightly...
+		var currrl unix.Rlimit
+		Expect(unix.Getrlimit(unix.RLIMIT_FSIZE, &currrl)).To(Succeed())
+		defer func() {
+			Expect(unix.Setrlimit(unix.RLIMIT_FSIZE, &currrl)).To(Succeed())
+		}()
+		Expect(unix.Setrlimit(unix.RLIMIT_FSIZE, &unix.Rlimit{
+			Cur: 100, Max: currrl.Max})).To(Succeed())
+
+		Expect(pullLimiter.Wait(ctx)).To(Succeed())
+		Expect(SaveImageToFile(ctx,
+			canaryImageRef, canaryPlatform, tmpDirPath, nil /* ensure pull */)).Error().To(HaveOccurred())
 	})
 
 })

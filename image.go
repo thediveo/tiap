@@ -80,7 +80,8 @@ func SaveImageToFile(ctx context.Context,
 	_, _ = digester.Write([]byte(imageref))
 	filename = hex.EncodeToString(digester.Sum(nil)) + ".tar"
 
-	// Write the container image data into the file system path we were told.
+	// Write (rather, transfer) the container image data into the file system
+	// path we were told.
 	imageSavePathName := filepath.Join(savedir, filename)
 	f, err := os.Create(imageSavePathName)
 	if err != nil {
@@ -147,26 +148,9 @@ func pullRemoteImage(
 	imageref name.Reference,
 	wantPlatform *ociv1.Platform,
 ) (ociv1.Image, error) {
-	newsch := make(chan ociv1.Update, 16)
-	// log (to console) any update information we get while pulling the image
-	// from a remote registry. We wait for updates until the channel gets closed
-	// and we read zero value information.
-	go func() {
-		var zero ociv1.Update
-		for {
-			news := <-newsch
-			if news == zero {
-				return // only when news channel has been closed and drained
-			}
-			log.Info(fmt.Sprintf("Pull - %s %d/%d",
-				imageref.String(), news.Complete, news.Total))
-		}
-	}()
 	image, err := remote.Image(imageref,
 		remote.WithContext(ctx),
-		remote.WithPlatform(*wantPlatform),
-		remote.WithProgress(newsch))
-	close(newsch)
+		remote.WithPlatform(*wantPlatform))
 	if err != nil {
 		return nil, fmt.Errorf("cannot pull image %s, reason: %w",
 			imageref.String(), err)
