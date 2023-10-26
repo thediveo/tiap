@@ -57,6 +57,8 @@ var _ = BeforeSuite(func(ctx context.Context) {
 	switch arch {
 	case "x86_64":
 		arch = "amd64"
+	case "aarch64":
+		arch = "arm64"
 	}
 	canaryPlatform = info.OSType + "/" + arch
 })
