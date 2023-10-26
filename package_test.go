@@ -63,7 +63,7 @@ var _ = BeforeSuite(func(ctx context.Context) {
 	canaryPlatform = info.OSType + "/" + arch
 })
 
-func TestLinuxKernelNamespaces(t *testing.T) {
+func TestTiap(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "tiap package")
 }
