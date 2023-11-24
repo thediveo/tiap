@@ -23,20 +23,20 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	//. "github.com/thediveo/success"
 )
 
-var _ = FDescribe("digesting streamed files digests", Ordered, func() {
+var _ = Describe("digesting streamed files digests", Ordered, func() {
 
 	BeforeEach(func() {
 		GrabLog(logrus.InfoLevel)
 	})
 
 	It("calculates correct digests of files", func() {
-		fd := FileDigester{}
+		fd := StreamDigester{}
 		testdatafs := os.DirFS("testdata/digests")
 		Expect(fd.DigestFile(testdatafs, "deetail.json", io.Discard)).To(Succeed())
 		Expect(fd.DigestFile(testdatafs, "hellorld/appicon.png", io.Discard)).To(Succeed())
+		Expect(fd).To(HaveLen(2))
 		Expect(fd).To(And(
 			HaveKeyWithValue("deetail.json",
 				"2a353516432b495427291a6d8d633cbb6711b617633204cb221c8527474ae42b"),
@@ -46,7 +46,7 @@ var _ = FDescribe("digesting streamed files digests", Ordered, func() {
 	})
 
 	It("generates digests.json content", func() {
-		fd := FileDigester{}
+		fd := StreamDigester{}
 		testdatafs := os.DirFS("testdata/digests")
 		Expect(fd.DigestFile(testdatafs, "deetail.json", io.Discard)).To(Succeed())
 		Expect(fd.DigestFile(testdatafs, "hellorld/appicon.png", io.Discard)).To(Succeed())
@@ -65,7 +65,7 @@ var _ = FDescribe("digesting streamed files digests", Ordered, func() {
 	When("things go south", func() {
 
 		It("reports when files cannot be opened", func() {
-			fd := FileDigester{}
+			fd := StreamDigester{}
 			badfs := &badFS{
 				FS:   os.DirFS("testdata/digests"),
 				fail: fsFailOpen,
@@ -75,7 +75,7 @@ var _ = FDescribe("digesting streamed files digests", Ordered, func() {
 		})
 
 		It("reports when stream cannot be read", func() {
-			fd := FileDigester{}
+			fd := StreamDigester{}
 			badfs := &badFS{
 				FS:   os.DirFS("testdata/digests"),
 				fail: fsFailRead,
@@ -85,14 +85,14 @@ var _ = FDescribe("digesting streamed files digests", Ordered, func() {
 		})
 
 		It("reports errors when it cannot stream data", func() {
-			fd := FileDigester{}
+			fd := StreamDigester{}
 			badw := &badWriter{}
 			Expect(fd.DigestFile(os.DirFS("testdata/digests"), "deetail.json", badw)).To(
 				MatchError(ContainSubstring("cannot determine SHA256 for")))
 		})
 
 		It("reports errors ", func() {
-			fd := FileDigester{}
+			fd := StreamDigester{}
 			badw := &badWriter{}
 			Expect(fd.WriteDigestsJSON(badw)).Error().To(
 				MatchError(ContainSubstring("cannot write digests JSON")))

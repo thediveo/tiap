@@ -25,12 +25,13 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// FileDigester receives the SHA256 .app file contents digests as we go along
-// streaming the individual files into an .app tar file. At the end, it can
-// stream the final digests.json information.
-type FileDigester map[string]string
+// StreamDigester determines the SHA256 .app file contents digests as we go
+// along streaming the individual files into an .app tar file writer. After all
+// files have been streamed, the StreamDigester should be told to stream the
+// final digests.json information.
+type StreamDigester map[string]string
 
-func (f FileDigester) DigestFile(root fs.FS, path string, w io.Writer) error {
+func (f StreamDigester) DigestFile(root fs.FS, path string, w io.Writer) error {
 	r, err := root.Open(path)
 	if err != nil {
 		return fmt.Errorf("cannot read %q, reason: %w", path, err)
@@ -42,7 +43,7 @@ func (f FileDigester) DigestFile(root fs.FS, path string, w io.Writer) error {
 // DigestStream copies a stream from the specied reader to the specified writer,
 // determining the stream's content digest along the way and remembering the
 // final digest for later use.
-func (f FileDigester) DigestStream(path string, r io.Reader, w io.Writer) error {
+func (f StreamDigester) DigestStream(path string, r io.Reader, w io.Writer) error {
 	digester := sha256.New()
 	w = io.MultiWriter(digester, w)
 	if _, err := io.Copy(w, r); err != nil {
@@ -57,7 +58,7 @@ func (f FileDigester) DigestStream(path string, r io.Reader, w io.Writer) error 
 // WriteDigestsJSON write the all calculated digests in the IE app package
 // format's "digests.json" format. Just for the record: the digests.json file
 // isn't digested, for reasons.
-func (f FileDigester) WriteDigestsJSON(w io.Writer) error {
+func (f StreamDigester) WriteDigestsJSON(w io.Writer) error {
 	b, err := json.Marshal(struct {
 		Version string            `json:"version"`
 		Files   map[string]string `json:"files"`
