@@ -21,70 +21,49 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"os"
 
 	log "github.com/sirupsen/logrus"
 )
 
-// FileDigests calculates the SHA256 digests of files inside the “root”
-// directory and its subdirectories, and returns them as a map of filenames to
-// SHA256 hex strings. The SHA256 hex strings do not contain a “sha256:”
-// digist scheme prefix.
-//
-// Please note that symbolic links are ignored.
-func FileDigests(root string) (map[string]string, error) {
-	return fileDigests(os.DirFS(root))
-}
-func fileDigests(rootfs fs.FS) (map[string]string, error) {
-	log.Info("   🧮  determining package files SHA256 digests...")
-	digests := map[string]string{}
+// FileDigester receives the SHA256 .app file contents digests as we go along
+// streaming the individual files into an .app tar file. At the end, it can
+// stream the final digests.json information.
+type FileDigester map[string]string
 
-	err := fs.WalkDir(rootfs, ".", func(path string, dirEntry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if dirEntry.IsDir() || path == "digests.json" { // ...safeguard
-			return nil
-		}
-		// Open file and calculate the SHA256 digest over its contents.
-		f, err := rootfs.Open(path)
-		if err != nil {
-			return fmt.Errorf("cannot open %s, reason: %w", path, err)
-		}
-		defer f.Close()
-		digester := sha256.New()
-		if _, err := io.Copy(digester, f); err != nil {
-			return fmt.Errorf("cannot determine SHA256 for %s, reason: %w", path, err)
-		}
-		digest := hex.EncodeToString(digester.Sum(nil))
-		digests[path] = digest
-		log.Info(fmt.Sprintf("      🧮  digest(ed) %s: %s", path, digest))
-		return nil
-	})
+func (f FileDigester) DigestFile(root fs.FS, path string, w io.Writer) error {
+	r, err := root.Open(path)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("cannot read %q, reason: %w", path, err)
 	}
-	return digests, nil
+	defer r.Close()
+	return f.DigestStream(path, r, w)
 }
 
-// WriteDigests determines the file digests inside the “root” directory and its
-// sub directories and then writes the results to the specified io.Writer in
-// “digests.json” format.
-func WriteDigests(w io.Writer, root string) error {
-	return writeDigests(w, os.DirFS(root))
+// DigestStream copies a stream from the specied reader to the specified writer,
+// determining the stream's content digest along the way and remembering the
+// final digest for later use.
+func (f FileDigester) DigestStream(path string, r io.Reader, w io.Writer) error {
+	digester := sha256.New()
+	w = io.MultiWriter(digester, w)
+	if _, err := io.Copy(w, r); err != nil {
+		return fmt.Errorf("cannot determine SHA256 for %q, rason: %w", path, err)
+	}
+	digest := hex.EncodeToString(digester.Sum(nil))
+	f[path] = digest
+	log.Info(fmt.Sprintf("      🧮  digest(ed) %q: %s", path, digest))
+	return nil
 }
 
-func writeDigests(w io.Writer, rootfs fs.FS) error {
-	digests, err := fileDigests(rootfs)
-	if err != nil {
-		return err
-	}
+// WriteDigestsJSON write the all calculated digests in the IE app package
+// format's "digests.json" format. Just for the record: the digests.json file
+// isn't digested, for reasons.
+func (f FileDigester) WriteDigestsJSON(w io.Writer) error {
 	b, err := json.Marshal(struct {
 		Version string            `json:"version"`
 		Files   map[string]string `json:"files"`
 	}{
 		Version: "1",
-		Files:   digests,
+		Files:   f,
 	})
 	if err != nil {
 		return fmt.Errorf("cannot generate digests JSON, reason: %w", err)

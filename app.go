@@ -220,7 +220,7 @@ func (a *App) Package(out string) error {
 	if err != nil {
 		return fmt.Errorf("cannot create digests.json, reason: %w", err)
 	}
-	err = WriteDigests(digestJson, a.tmpDir)
+	err = nil // FIXME: WriteDigests(digestJson, a.tmpDir)
 	digestJson.Close()
 	if err != nil {
 		return err
