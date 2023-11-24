@@ -15,13 +15,14 @@
 package tiap
 
 import (
+	"archive/tar"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/google/go-containerregistry/pkg/legacy/tarball"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -31,24 +32,30 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const defaultAppUID = 1000
+const defaultAppGID = 1000
+
+var defaultMtime, _ = time.Parse(time.RFC3339, "1985-10-26T08:15:00.000Z")
+
 // DefaultRegistry points to the Docker registry.
 var DefaultRegistry = name.DefaultRegistry
 
-// SaveImageToFile checks if the referenced image (“imageref”) is either
-// available locally for the specific platform or otherwise attempts to pull it,
-// and then immediately saves it to local storage in the specified directory
-// “savedir”. The name of the image file will be the image reference's SHA256.
-// SaveImageToFile either reports success or a more specific error.
+// SaveImageToWriter checks if the referenced image (“imageref”) is either
+// available locally for the specific platform or otherwise attempts to pull it
+// from a registry, and then immediately strems it to the specified tar writer.
+// The name of the image file will be the image reference's SHA256.
+// SaveImageToWriter either reports success or a more specific error.
 //
 // Please note that an attempt to find the referenced image with the local
-// daemon is only made when a non-nil client has been passed in. Otherwise,
-// always a pull is attempted only.
+// daemon is only made when a non-nil client has been passed in. Otherwise, only
+// a pull is attempted, never a local daemon lookup.
 //
 // [go-containerregistry]: https://github.com/google/go-containerregistry
-func SaveImageToFile(ctx context.Context,
+func SaveImageToWriter(ctx context.Context,
+	w *tar.Writer,
 	imageref string,
 	platform string,
-	savedir string,
+	repo string,
 	optclient daemon.Client,
 ) (filename string, err error) {
 	imgRef, err := name.ParseReference(
@@ -75,23 +82,27 @@ func SaveImageToFile(ctx context.Context,
 		}
 	}
 
-	// The image save filename is the SHA256 of the imageref(!).
+	// The image filename in the final .app tar is the SHA256 of the
+	// imageref(!), inside the $REPO/images directory.
 	digester := sha256.New()
 	_, _ = digester.Write([]byte(imageref))
-	filename = hex.EncodeToString(digester.Sum(nil)) + ".tar"
+	filename = filepath.Join(repo, "images", hex.EncodeToString(digester.Sum(nil))+".tar")
+	w.WriteHeader(&tar.Header{
+		Typeflag:   tar.TypeReg,
+		Name:       filepath.ToSlash(filename),
+		Mode:       0644,
+		ModTime:    defaultMtime.UTC(),
+		AccessTime: defaultMtime.UTC(),
+		ChangeTime: defaultMtime.UTC(),
+		Size:       0, // we don't know yet, only after the fact.
+		Uid:        defaultAppUID,
+		Gid:        defaultAppGID,
+	})
 
-	// Write (rather, transfer) the container image data into the file system
-	// path we were told.
-	imageSavePathName := filepath.Join(savedir, filename)
-	f, err := os.Create(imageSavePathName)
-	if err != nil {
-		return "", fmt.Errorf("cannot create image file %q, reason: %w",
-			imageSavePathName, err)
-	}
-	defer f.Close()
-	if err := tarball.Write(imgRef, image, f); err != nil {
+	// Now stream the container image data into writer we were given.
+	if err := tarball.Write(imgRef, image, w); err != nil {
 		return "", fmt.Errorf("cannot write image file %q, reason: %w",
-			imageSavePathName, err)
+			filename, err)
 	}
 	totalWritten, err := f.Seek(0, io.SeekCurrent)
 	if err != nil {
