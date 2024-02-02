@@ -32,8 +32,8 @@ var _ = Describe("IE app building", func() {
 	Context("IE app details", func() {
 
 		It("rejects a missing or app details", func() {
-			Expect(setDetails("testdata/details/malformed/missing.json", "", "", "", "")).NotTo(Succeed())
-			Expect(setDetails("testdata/details/malformed/detail.json", "", "", "", "")).NotTo(Succeed())
+			Expect(writeDetails("testdata/details/malformed/missing.json", "", "", "", "")).NotTo(Succeed())
+			Expect(writeDetails("testdata/details/malformed/detail.json", "", "", "", "")).NotTo(Succeed())
 		})
 
 		When("setting and writing details", Ordered, func() {
@@ -62,7 +62,7 @@ var _ = Describe("IE app building", func() {
 			})
 
 			It("updates app details with version", func() {
-				Expect(setDetails(tmpPath, "hellorld", semver, "notes", "")).To(Succeed())
+				Expect(writeDetails(tmpPath, "hellorld", semver, "notes", "")).To(Succeed())
 				details = Successful(os.ReadFile(tmpPath))
 				var d map[string]any
 				Expect(json.Unmarshal([]byte(details), &d)).To(Succeed())
@@ -73,7 +73,7 @@ var _ = Describe("IE app building", func() {
 			})
 
 			It("doesn't set the default architecture", func() {
-				Expect(setDetails(tmpPath, "hellorld", semver, "notes", DefaultIEAppArch)).To(Succeed())
+				Expect(writeDetails(tmpPath, "hellorld", semver, "notes", DefaultIEAppArch)).To(Succeed())
 				details = Successful(os.ReadFile(tmpPath))
 				var d map[string]any
 				Expect(json.Unmarshal([]byte(details), &d)).To(Succeed())
@@ -81,7 +81,7 @@ var _ = Describe("IE app building", func() {
 			})
 
 			It("sets the default architecture based on (non-default) platform", func() {
-				Expect(setDetails(tmpPath, "hellorld", semver, "notes", "arm64")).To(Succeed())
+				Expect(writeDetails(tmpPath, "hellorld", semver, "notes", "arm64")).To(Succeed())
 				details = Successful(os.ReadFile(tmpPath))
 				var d map[string]any
 				Expect(json.Unmarshal([]byte(details), &d)).To(Succeed())

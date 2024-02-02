@@ -15,8 +15,10 @@
 package main
 
 import (
+	"archive/tar"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -44,6 +46,7 @@ const (
 	dockerHostFlag   = "host"
 )
 
+// successfully panics if the error value of a called function is non-nil.
 func successfully[R any](r R, err error) R {
 	if err != nil {
 		panic(err)
@@ -51,6 +54,8 @@ func successfully[R any](r R, err error) R {
 	return r
 }
 
+// unerringly logs a fatal error if the error value of a called function is
+// non-nil.
 func unerringly[R any](r R, err error) R {
 	if err != nil {
 		log.Fatal(err.Error())
@@ -134,7 +139,6 @@ func newRootCmd() (rootCmd *cobra.Command) {
 			if err != nil {
 				return err
 			}
-			defer app.Done()
 
 			platform := unerringly(
 				platforms.Parse(successfully(rootCmd.Flags().GetString(platformFlag))))
@@ -152,7 +156,19 @@ func newRootCmd() (rootCmd *cobra.Command) {
 			appArch := denormalize(platform).Architecture
 			log.Infof("🚊  denormalized IE App architecture: %q", appArch)
 
-			err = app.SetDetails(appSemver, releaseNotes, appArch)
+			outname := successfully(rootCmd.Flags().GetString(outnameFlag))
+			if filepath.Ext(outname) == "" {
+				outname = outname + ".app"
+			}
+			fapp, err := os.Create(outname)
+			if err != nil {
+				return fmt.Errorf("cannot create .app file %q, reason: %w",
+					outname, err)
+			}
+			defer fapp.Close()
+			tarw := tar.NewWriter(fapp)
+
+			err = app.SetDetails(tarw, appSemver, releaseNotes, appArch)
 			if err != nil {
 				return err
 			}
@@ -184,11 +200,7 @@ func newRootCmd() (rootCmd *cobra.Command) {
 				return err
 			}
 
-			outname := successfully(rootCmd.Flags().GetString(outnameFlag))
-			if filepath.Ext(outname) == "" {
-				outname = outname + ".app"
-			}
-			return app.Package(outname)
+			return app.Package(outname) // FIXME:
 		},
 	}
 	rootCmd.Flags().StringP(outnameFlag, "o", "",

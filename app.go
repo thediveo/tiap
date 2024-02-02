@@ -28,15 +28,14 @@ import (
 	"path/filepath"
 
 	"github.com/google/go-containerregistry/pkg/v1/daemon"
-	"github.com/otiai10/copy"
-	log "github.com/sirupsen/logrus"
 	"golang.org/x/exp/slices"
+
+	log "github.com/sirupsen/logrus"
 )
 
 // App represents an IE App (project) to be packaged.
 type App struct {
 	sourcePath string
-	tmpDir     string
 	repo       string
 	project    *ComposerProject
 }
@@ -48,42 +47,35 @@ const DefaultIEAppArch = "x86-64"
 // NewApp returns an IE App object initialized from the specified “template”
 // path.
 func NewApp(source string) (a *App, err error) {
-	tmpDir, err := os.MkdirTemp("", "tiap-project-*")
-	if err != nil {
-		return nil, fmt.Errorf("cannot create temporary project directory, reason: %w", err)
-	}
-	defer func() {
-		if err != nil && tmpDir != "" {
-			os.RemoveAll(tmpDir)
-			a = nil
-		}
-	}()
-
 	// Copy the "template" app file/folder structure into a temporary place, but
-	// skip any Docker composer file for now. However, the notice its directory
-	// as the "repository".
-	log.Info(fmt.Sprintf("🏗  creating temporary project copy in %q", tmpDir))
+	// skip any Docker composer file for now. However, the remember its
+	// containing directory as the "repository".
+	log.Info(fmt.Sprintf("🏗  determining repository"))
 	repo := ""
-	err = copy.Copy(source, tmpDir, copy.Options{
-		Skip: func(info os.FileInfo, src, dest string) (bool, error) {
-			if slices.Contains(composerFiles, info.Name()) {
-				repo = filepath.Dir(src)
-				return true, nil
-			}
-			return false, nil
-		},
+	err = filepath.WalkDir(source, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !slices.Contains(composerFiles, d.Name()) {
+			return nil
+		}
+		if repo != "" {
+			return errors.New("multiple Docker compose project files")
+		}
+		repo = filepath.Dir(path)
+		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("cannot copy app template structure, reason: %w", err)
+		return nil, fmt.Errorf("cannot scan app template structure, reason: %w", err)
 	}
 	if repo == "" {
 		return nil, errors.New("project lacks Docker compose project file")
 	}
-	repo, err = filepath.Rel(source, repo)
+	relrepo, err := filepath.Rel(source, repo)
 	if err != nil {
 		return nil, errors.New("cannot determine relative repository path")
 	}
-	log.Info(fmt.Sprintf("🫙  app repository detected as %q", repo))
+	log.Info(fmt.Sprintf("🫙  app repository detected as %q", relrepo))
 
 	// Try to locate and load the Docker composer project
 	//
@@ -94,35 +86,34 @@ func NewApp(source string) (a *App, err error) {
 
 	a = &App{
 		sourcePath: source,
-		tmpDir:     tmpDir,
 		repo:       repo,
 		project:    project,
 	}
 	return
 }
 
-// Done removes all temporary work files.
-func (a *App) Done() {
-	if a.tmpDir != "" {
-		os.RemoveAll(a.tmpDir)
-		log.Info(fmt.Sprintf("🧹  removed temporary folder %q", a.tmpDir))
-		a.tmpDir = ""
-	}
-}
-
 // SetDetails sets the semver (“versionNumber”, oh well) of this release, notes
-// (if any) and optional architecture, and then writes a new “detail.json”
-// into the build directory. This automatically sets the versionId to some
-// suitable value behind the scenes. At least we think that it might be a
-// suitable versionId value.
-func (a *App) SetDetails(semver string, releasenotes string, iearch string) error {
-	return setDetails(
-		filepath.Join(a.tmpDir, "detail.json"),
+// (if any) and optional architecture, and then writes a new “detail.json” into
+// the specified tar writer.
+//
+// Note: SetDetails automatically sets the versionId to some suitable value
+// behind the scenes. At least we think that it might be a suitable versionId
+// value.
+func (a *App) SetDetails(
+	tarw *tar.Writer,
+	semver string,
+	releasenotes string,
+	iearch string,
+) error {
+	return writeDetails(
+		tarw,
+		filepath.Join(a.sourcePath, "detail.json"),
 		a.repo,
 		semver, releasenotes, iearch)
 }
 
-func setDetails(
+func writeDetails(
+	tarw *tar.Writer,
 	path string,
 	repo string,
 	semver string,
@@ -169,9 +160,22 @@ func setDetails(
 	if err != nil {
 		return fmt.Errorf("cannot JSONize detail information, reason: %w", err)
 	}
-	err = os.WriteFile(path, detailJSON, 0666)
+	err = tarw.WriteHeader(&tar.Header{
+		Typeflag:   tar.TypeReg,
+		Name:       filepath.ToSlash("detail.json"),
+		Mode:       0644,
+		ModTime:    defaultMtime.UTC(),
+		AccessTime: defaultMtime.UTC(),
+		ChangeTime: defaultMtime.UTC(),
+		Size:       int64(len(detailJSON)),
+		Uid:        defaultAppUID,
+		Gid:        defaultAppGID,
+	})
+	if err == nil {
+		_, err = tarw.Write(detailJSON)
+	}
 	if err != nil {
-		return fmt.Errorf("cannot update detail.json, reason: %w", err)
+		return fmt.Errorf("cannot write detail.json, reason: %w", err)
 	}
 	return nil
 }
