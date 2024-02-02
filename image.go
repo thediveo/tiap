@@ -21,6 +21,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -40,78 +41,121 @@ var defaultMtime, _ = time.Parse(time.RFC3339, "1985-10-26T08:15:00.000Z")
 // DefaultRegistry points to the Docker registry.
 var DefaultRegistry = name.DefaultRegistry
 
-// SaveImageToWriter checks if the referenced image (“imageref”) is either
+// SaveImageToTarWriter checks if the referenced image (“imageref”) is either
 // available locally for the specific platform or otherwise attempts to pull it
-// from a registry, and then immediately strems it to the specified tar writer.
+// from a registry, and then immediately streams it to the specified tar writer.
 // The name of the image file will be the image reference's SHA256.
-// SaveImageToWriter either reports success or a more specific error.
+// SaveImageToTarWriter either reports success or a more specific error.
 //
 // Please note that an attempt to find the referenced image with the local
 // daemon is only made when a non-nil client has been passed in. Otherwise, only
 // a pull is attempted, never a local daemon lookup.
 //
 // [go-containerregistry]: https://github.com/google/go-containerregistry
-func SaveImageToWriter(ctx context.Context,
-	w *tar.Writer,
+func SaveImageToTarWriter(ctx context.Context,
+	tarw *tar.Writer,
 	imageref string,
 	platform string,
 	repo string,
 	optclient daemon.Client,
-) (filename string, err error) {
+) error {
+	// Get our dirty paws onto the referenced image and for the specified
+	// platform only.
 	imgRef, err := name.ParseReference(
 		imageref, name.WithDefaultRegistry(DefaultRegistry))
 	if err != nil {
-		return "", fmt.Errorf("invalid image reference %q: %w",
+		return fmt.Errorf("invalid image reference %q: %w",
 			imageref, err)
 	}
 
 	wantPlatform, err := ociv1.ParsePlatform(platform)
 	if err != nil {
-		return "", fmt.Errorf("invalid platform %q: %w",
+		return fmt.Errorf("invalid platform %q: %w",
 			platform, err)
 	}
 
 	image, err := hasLocalImage(ctx, optclient, imgRef, wantPlatform)
 	if err != nil {
-		return "", err
+		return err
 	}
 	if image == nil {
 		image, err = pullRemoteImage(ctx, imgRef, wantPlatform)
 		if err != nil {
-			return "", err
+			return err
 		}
+	}
+
+	// Note that we have a problem: the .app is in TAR format and that works by
+	// writing a header before the next file contents, specifying the length of
+	// the file to follow beforehand in the header. But with true streaming, we
+	// don't know that length beforehand and the legacy v1 tarballer won't tell
+	// us. So we have to work around this speedbump by first writing the v1
+	// tarball into a temporary file, before then copying it into the .app
+	// tarball. There is at least a slim benefit as we now don't need to store
+	// multiple images in the filesystem, but only one after the other.
+	fTmpImage, err := os.CreateTemp("", "tiap-image-v1-*")
+	if err != nil {
+		return fmt.Errorf("cannot create intermediate temporary image v1 tarball, reason: %w",
+			err)
+	}
+	defer func() {
+		fTmpImage.Close()
+		if err := os.Remove(fTmpImage.Name()); err != nil {
+			log.Fatalf("failed to remove intermediate temporary image v1 tarball %q, reason: %s",
+				fTmpImage.Name(), err)
+		}
+	}()
+	// Now stream the container image data into the (temporary) writer we were
+	// given, and determine the overall size of the resulting tarball.
+	if err := tarball.Write(imgRef, image, fTmpImage); err != nil {
+		return fmt.Errorf("cannot write image file %q, reason: %w",
+			fTmpImage.Name(), err)
+	}
+	if err := fTmpImage.Sync(); err != nil {
+		return fmt.Errorf("cannot determine length of intermediate temporary image v1 tarball %q, reason: %w",
+			fTmpImage.Name(), err)
+	}
+	v1tarballTotal, err := fTmpImage.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return fmt.Errorf("cannot determine length of intermediate temporary image v1 tarball %q, reason: %w",
+			fTmpImage.Name(), err)
+	}
+	if _, err := fTmpImage.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("cannot rewind intermediate temporary image v1 tarball %q, reason: %w",
+			fTmpImage.Name(), err)
 	}
 
 	// The image filename in the final .app tar is the SHA256 of the
 	// imageref(!), inside the $REPO/images directory.
 	digester := sha256.New()
 	_, _ = digester.Write([]byte(imageref))
-	filename = filepath.Join(repo, "images", hex.EncodeToString(digester.Sum(nil))+".tar")
-	w.WriteHeader(&tar.Header{
+	filename := filepath.Join(repo, "images", hex.EncodeToString(digester.Sum(nil))+".tar")
+	if err := tarw.WriteHeader(&tar.Header{
 		Typeflag:   tar.TypeReg,
 		Name:       filepath.ToSlash(filename),
 		Mode:       0644,
 		ModTime:    defaultMtime.UTC(),
 		AccessTime: defaultMtime.UTC(),
 		ChangeTime: defaultMtime.UTC(),
-		Size:       0, // we don't know yet, only after the fact.
+		Size:       v1tarballTotal,
 		Uid:        defaultAppUID,
 		Gid:        defaultAppGID,
-	})
-
-	// Now stream the container image data into writer we were given.
-	if err := tarball.Write(imgRef, image, w); err != nil {
-		return "", fmt.Errorf("cannot write image file %q, reason: %w",
-			filename, err)
+	}); err != nil {
+		return fmt.Errorf("cannot add intermediate temporary image v1 tarball %q, reason: %w",
+			fTmpImage.Name(), err)
 	}
-	totalWritten, err := f.Seek(0, io.SeekCurrent)
+	n, err := io.Copy(tarw, fTmpImage)
 	if err != nil {
-		return "", fmt.Errorf("cannot determine length of written image file %q, reason: %w",
-			imageSavePathName, err)
+		return fmt.Errorf("cannot add intermediate temporary image v1 tarball %q, reason: %w",
+			fTmpImage.Name(), err)
+	}
+	if n != v1tarballTotal {
+		return fmt.Errorf("could not write intermediate temporary image v1 tarball %q, reason: %w",
+			fTmpImage.Name(), err)
 	}
 	log.Info(fmt.Sprintf("   🖭  written %d bytes of 🖼  image with ID %s",
-		totalWritten, filename[:12]))
-	return
+		v1tarballTotal, filepath.Base(filename)[:12]))
+	return nil
 }
 
 // hasLocalImage returns the referenced image for the specified platform, if

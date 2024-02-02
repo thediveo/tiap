@@ -44,7 +44,7 @@ func GrabLog(level logrus.Level) {
 }
 
 const (
-	canaryImageRef = "public.ecr.aws/docker/library/busybox:latest"
+	canaryImageRef = "busybox:latest" //"public.ecr.aws/docker/library/busybox:latest"
 )
 
 var canaryPlatform string

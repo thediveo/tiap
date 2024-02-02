@@ -15,13 +15,14 @@
 package tiap
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/docker/docker/api/types"
@@ -37,7 +38,7 @@ import (
 	. "github.com/thediveo/success"
 )
 
-var _ = Describe("image pulling and saving", Ordered, func() {
+var _ = Describe("image pulling and streaming", Ordered, func() {
 
 	var moby *client.Client
 
@@ -46,12 +47,7 @@ var _ = Describe("image pulling and saving", Ordered, func() {
 		DeferCleanup(func() { moby.Close() })
 	})
 
-	var tmpDirPath string
-
 	BeforeAll(func() {
-		tmpDirPath = Successful(os.MkdirTemp("", "tiap-test-*"))
-		DeferCleanup(func() { os.RemoveAll(tmpDirPath) })
-
 		canaryImgRef := Successful(name.ParseReference(canaryImageRef))
 		if reg := canaryImgRef.Context().RegistryStr(); reg != "" {
 			oldDefaultRegistry := DefaultRegistry
@@ -65,23 +61,23 @@ var _ = Describe("image pulling and saving", Ordered, func() {
 		It("reports cancelled context", func() {
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
-			Expect(SaveImageToFile(ctx, canaryImageRef, canaryPlatform, tmpDirPath, nil)).Error().
+			Expect(SaveImageToTarWriter(ctx, nil, canaryImageRef, canaryPlatform, "", nil)).Error().
 				To(MatchError(ContainSubstring("context canceled")))
 		})
 
 		It("reports invalid platform", func(ctx context.Context) {
-			Expect(SaveImageToFile(ctx, canaryImageRef, "pl/a/t/t/f/o/r:m", tmpDirPath, nil)).Error().
+			Expect(SaveImageToTarWriter(ctx, nil, canaryImageRef, "pl/a/t/t/f/o/r:m", "", nil)).Error().
 				To(MatchError(ContainSubstring("invalid platform")))
 		})
 
 		It("reports an invalid image reference", func(ctx context.Context) {
-			Expect(SaveImageToFile(ctx, ":", canaryPlatform, tmpDirPath, nil)).Error().
+			Expect(SaveImageToTarWriter(ctx, nil, ":", canaryPlatform, "", nil)).Error().
 				To(MatchError(ContainSubstring("invalid image reference")))
 		})
 
 		It("reports unknown image reference", func(ctx context.Context) {
 			imageref := strings.TrimSuffix(canaryImageRef, ":latest") + ":earliest"
-			Expect(SaveImageToFile(ctx, imageref, canaryPlatform, tmpDirPath, nil)).Error().
+			Expect(SaveImageToTarWriter(ctx, nil, imageref, canaryPlatform, "", nil)).Error().
 				To(MatchError(Or(
 					ContainSubstring("manifest unknown"),
 					ContainSubstring("MANIFEST_UNKNOWN"))))
@@ -89,8 +85,9 @@ var _ = Describe("image pulling and saving", Ordered, func() {
 
 		It("reports when image cannot be saved", func(ctx context.Context) {
 			Expect(pullLimiter.Wait(ctx)).To(Succeed())
-			Expect(SaveImageToFile(ctx, canaryImageRef, canaryPlatform, "/nada-nothing-nil", nil)).Error().
-				To(MatchError(ContainSubstring("cannot create image file")))
+			var fw failingWriter
+			Expect(SaveImageToTarWriter(ctx, tar.NewWriter(&fw), canaryImageRef, canaryPlatform, "/foobar", nil)).Error().
+				To(MatchError(ContainSubstring("cannot add intermediate temporary image v1 tarball")))
 		})
 
 	})
@@ -152,19 +149,26 @@ var _ = Describe("image pulling and saving", Ordered, func() {
 
 	})
 
-	It("grabs an image, saves it to a .tar file and names it after the SHA256 of the image ref", slowSpec, func(ctx context.Context) {
+	It("grabs an image, writes it into a .tarball and names it after the SHA256 of the image ref", slowSpec, func(ctx context.Context) {
 		GrabLog(logrus.DebugLevel)
 
 		Expect(pullLimiter.Wait(ctx)).To(Succeed())
-		filename, err := SaveImageToFile(ctx,
-			canaryImageRef, canaryPlatform, tmpDirPath, nil /* ensure pull */)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(filename).To(MatchRegexp(`^[0-9a-z]{64}\.tar$`))
-		Expect(filepath.Join(tmpDirPath, filename)).To(BeAnExistingFile())
 
+		fTmp := Successful(os.CreateTemp("", "test-tarball-*"))
+		defer func() {
+			Expect(fTmp.Close()).To(Succeed())
+			Expect(os.Remove(fTmp.Name())).To(Succeed())
+		}()
+
+		Expect(SaveImageToTarWriter(ctx,
+			tar.NewWriter(fTmp),
+			canaryImageRef, canaryPlatform, "/foobar", nil /* ensure pull */)).
+			To(Succeed())
+		Expect(fTmp.Seek(0, io.SeekStart)).Error().NotTo(HaveOccurred())
+		h := Successful(tar.NewReader(fTmp).Next())
 		digester := sha256.New()
 		digester.Write([]byte(canaryImageRef))
-		Expect(filename).To(Equal(hex.EncodeToString(digester.Sum(nil)) + ".tar"))
+		Expect(h.Name).To(Equal("/foobar/images/" + hex.EncodeToString(digester.Sum(nil)) + ".tar"))
 	})
 
 	It("reports image writing problems", func(ctx context.Context) {
@@ -177,9 +181,21 @@ var _ = Describe("image pulling and saving", Ordered, func() {
 		Expect(unix.Setrlimit(unix.RLIMIT_FSIZE, &unix.Rlimit{
 			Cur: 100, Max: currrl.Max})).To(Succeed())
 
+		fTmp := Successful(os.CreateTemp("", "test-tarball-*"))
+		defer func() {
+			Expect(fTmp.Close()).To(Succeed())
+			Expect(os.Remove(fTmp.Name())).To(Succeed())
+		}()
+
 		Expect(pullLimiter.Wait(ctx)).To(Succeed())
-		Expect(SaveImageToFile(ctx,
-			canaryImageRef, canaryPlatform, tmpDirPath, nil /* ensure pull */)).Error().To(HaveOccurred())
+
+		Expect(SaveImageToTarWriter(ctx,
+			tar.NewWriter(fTmp),
+			canaryImageRef, canaryPlatform, "/foobar", nil /* ensure pull */)).Error().To(HaveOccurred())
 	})
 
 })
+
+type failingWriter struct{}
+
+func (f *failingWriter) Write(p []byte) (int, error) { return 0, errors.New("sorry, we're closed") }

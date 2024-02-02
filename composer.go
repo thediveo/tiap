@@ -21,7 +21,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/distribution/distribution/reference"
+	"github.com/distribution/reference"
 	"github.com/docker/go-units"
 	"github.com/google/go-containerregistry/pkg/v1/daemon"
 	log "github.com/sirupsen/logrus"
@@ -139,7 +139,7 @@ func (p *ComposerProject) PullImages(
 	imagesDir := filepath.Join(root, "images")
 	os.MkdirAll(imagesDir, 0777)
 	for imageRef := range uniqueImageRefs {
-		_, err := SaveImageToFile(ctx, imageRef, platform, imagesDir, nil)
+		err := SaveImageToTarWriter(ctx, nil, imageRef, platform, imagesDir, nil) // FIXME:
 		if err != nil {
 			return fmt.Errorf("cannot pull and save image %q, reason: %w", imageRef, err)
 		}
