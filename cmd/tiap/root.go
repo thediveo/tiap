@@ -28,6 +28,7 @@ import (
 	"github.com/containerd/platforms"
 	"github.com/moby/moby/client"
 	ispecsv1 "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/sirupsen/logrus"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/thediveo/tiap"
@@ -42,6 +43,7 @@ const (
 	platformFlag     = "platform"
 	pullAlwaysFlag   = "pull-always"
 	dockerHostFlag   = "host"
+	debugFlag        = "debug"
 )
 
 func successfully[R any](r R, err error) R {
@@ -107,11 +109,16 @@ func newRootCmd() (rootCmd *cobra.Command) {
 			log.Info(fmt.Sprintf("   %s", rootCmd.Version))
 			log.Info("⚖  Apache 2.0 License")
 
+			if successfully(rootCmd.Flags().GetBool(debugFlag)) {
+				logrus.SetLevel(log.DebugLevel)
+			}
+			log.Debug("🐛 debug logging enabled")
+
 			appSemver := successfully(rootCmd.Flags().GetString(appVersionFlag))
 			if appSemver == "" {
 				out, err := exec.Command("git", "describe").CombinedOutput()
 				if err != nil {
-					log.Errorf(fmt.Sprintf("git describe: %s", out))
+					log.Errorf("git describe: %s", out)
 					return fmt.Errorf("git describe failed: %s", out)
 				}
 				appSemver = strings.Trim(string(out), "\r\n")
@@ -160,6 +167,7 @@ func newRootCmd() (rootCmd *cobra.Command) {
 			pullAlways := successfully(rootCmd.Flags().GetBool(pullAlwaysFlag))
 			var moby *client.Client
 			if !pullAlways {
+				log.Debugf("🐛 creating Docker/Moby client")
 				dockerHost := successfully(rootCmd.Flags().GetString(dockerHostFlag))
 				opts := []client.Opt{
 					client.WithAPIVersionNegotiation(),
@@ -174,6 +182,7 @@ func newRootCmd() (rootCmd *cobra.Command) {
 					return fmt.Errorf("cannot contact Docker daemon, reason: %w", err)
 				}
 				defer moby.Close()
+				log.Debugf("🐛 Docker/Moby client created")
 			}
 
 			err = app.PullAndWriteCompose(
@@ -212,6 +221,9 @@ func newRootCmd() (rootCmd *cobra.Command) {
 
 	rootCmd.Flags().StringP(dockerHostFlag, "H", "",
 		"Docker daemon socket to connect to (only if non-default and using local images)")
+
+	rootCmd.Flags().Bool(debugFlag, false,
+		"enable debug logging")
 
 	if info, biok := debug.ReadBuildInfo(); biok {
 		commit := buildInfo(info, "vcs.revision")

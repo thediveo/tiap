@@ -128,6 +128,7 @@ func (p *ComposerProject) PullImages(
 	root string,
 	optclient daemon.Client,
 ) error {
+	log.Debugf("🐛 getting (pulling) images...")
 	// As multiple services might reference the same container image and we must
 	// pull an image only once we first determine the unique image references.
 	uniqueImageRefs := map[string]nada{}
@@ -137,9 +138,11 @@ func (p *ComposerProject) PullImages(
 	// Prepare the images subdirectory where we will place the downloaded
 	// container images and then pull ... pull ... PULL!
 	imagesDir := filepath.Join(root, "images")
-	os.MkdirAll(imagesDir, 0777)
+	if err := os.MkdirAll(imagesDir, 0777); err != nil {
+		return fmt.Errorf("cannot create temporary images directory, reason: %w", err)
+	}
 	for imageRef := range uniqueImageRefs {
-		_, err := SaveImageToFile(ctx, imageRef, platform, imagesDir, nil)
+		_, err := SaveImageToFile(ctx, imageRef, platform, imagesDir, optclient)
 		if err != nil {
 			return fmt.Errorf("cannot pull and save image %q, reason: %w", imageRef, err)
 		}

@@ -51,18 +51,21 @@ func SaveImageToFile(ctx context.Context,
 	savedir string,
 	optclient daemon.Client,
 ) (filename string, err error) {
+	log.Debugf("🐛 saving image to file...")
 	imgRef, err := name.ParseReference(
 		imageref, name.WithDefaultRegistry(DefaultRegistry))
 	if err != nil {
 		return "", fmt.Errorf("invalid image reference %q: %w",
 			imageref, err)
 	}
+	log.Debugf("🐛 image reference: %s", imgRef)
 
 	wantPlatform, err := ociv1.ParsePlatform(platform)
 	if err != nil {
 		return "", fmt.Errorf("invalid platform %q: %w",
 			platform, err)
 	}
+	log.Debugf("🐛 wanted platform: %s", wantPlatform)
 
 	image, err := hasLocalImage(ctx, optclient, imgRef, wantPlatform)
 	if err != nil {
@@ -116,15 +119,18 @@ func hasLocalImage(
 	wantPlatform *ociv1.Platform,
 ) (ociv1.Image, error) {
 	if client == nil {
+		log.Debugf("🐛 no client, so not checking locally")
 		return nil, nil
 	}
 	// Is the correct image already locally available?
+	log.Debugf("🐛 checking if image %s is locally available...", iref)
 	image, err := daemon.Image(iref,
 		daemon.WithContext(ctx), daemon.WithClient(client))
 	if err != nil {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+		log.Debugf("🐛 image %s is not locally available", iref)
 		return nil, nil // stay silent; no daemon, no such image, no whatever, ...
 	}
 	config, err := image.ConfigFile()
@@ -136,8 +142,10 @@ func hasLocalImage(
 			iref.String(), err)
 	}
 	if hasPf := config.Platform(); hasPf == nil || !hasPf.Satisfies(*wantPlatform) {
+		log.Debugf("🐛 image %s is not locally available (may not satisfy requested platform)", iref)
 		return nil, nil
 	}
+	log.Debugf("🐛 image %s is locally available", iref)
 	return image, nil
 }
 
