@@ -18,10 +18,14 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
+	"math"
 	"os"
 	"path/filepath"
+	"slices"
+	"time"
 
-	"github.com/distribution/distribution/reference"
+	"github.com/distribution/reference"
 	"github.com/docker/go-units"
 	"github.com/google/go-containerregistry/pkg/v1/daemon"
 	log "github.com/sirupsen/logrus"
@@ -134,22 +138,30 @@ func (p *ComposerProject) PullImages(
 	for _, imageRef := range serviceimgs {
 		uniqueImageRefs[imageRef] = nada{}
 	}
+	log.Debugf("🐛 fetching and tar-ball'ing %d images...", len(uniqueImageRefs))
 	// Prepare the images subdirectory where we will place the downloaded
 	// container images and then pull ... pull ... PULL!
 	imagesDir := filepath.Join(root, "images")
-	os.MkdirAll(imagesDir, 0777)
-	for imageRef := range uniqueImageRefs {
-		_, err := SaveImageToFile(ctx, imageRef, platform, imagesDir, nil)
+	if err := os.MkdirAll(imagesDir, 0777); err != nil {
+		return fmt.Errorf("cannot create temporary images directory, reason: %w", err)
+	}
+
+	start := time.Now()
+	for _, imageRef := range slices.Sorted(maps.Keys(uniqueImageRefs)) {
+		_, err := SaveImageToFile(ctx, imageRef, platform, imagesDir, optclient)
 		if err != nil {
 			return fmt.Errorf("cannot pull and save image %q, reason: %w", imageRef, err)
 		}
 	}
+	duration := time.Duration(math.Ceil(time.Since(start).Seconds())) * time.Second
+	log.Debugf("🐛 all images fetched and saved in %s", duration)
 	return nil
 }
 
 // Save writes the loaded composer project to the specified io.Writer, returning
 // an error in case of failure.
 func (p *ComposerProject) Save(w io.Writer) error {
+	log.Debugf("🐛 saving composer project...")
 	b, err := yaml.Marshal(p.yaml)
 	if err != nil {
 		return fmt.Errorf("cannot write composer project, reason: %w", err)

@@ -20,14 +20,17 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
+	"time"
 
-	"github.com/google/go-containerregistry/pkg/legacy/tarball"
+	// legacytarball "github.com/google/go-containerregistry/pkg/legacy/tarball"
 	"github.com/google/go-containerregistry/pkg/name"
 	ociv1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/daemon"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -51,6 +54,7 @@ func SaveImageToFile(ctx context.Context,
 	savedir string,
 	optclient daemon.Client,
 ) (filename string, err error) {
+	log.Debugf("🐛 pulling and saving image %s to file...", imageref)
 	imgRef, err := name.ParseReference(
 		imageref, name.WithDefaultRegistry(DefaultRegistry))
 	if err != nil {
@@ -63,6 +67,7 @@ func SaveImageToFile(ctx context.Context,
 		return "", fmt.Errorf("invalid platform %q: %w",
 			platform, err)
 	}
+	log.Debugf("🐛 wanted platform: %s", wantPlatform)
 
 	image, err := hasLocalImage(ctx, optclient, imgRef, wantPlatform)
 	if err != nil {
@@ -89,7 +94,11 @@ func SaveImageToFile(ctx context.Context,
 			imageSavePathName, err)
 	}
 	defer f.Close()
+	log.Debugf("🐛 writing image %s to tar-ball...", imageref)
+	start := time.Now()
+	//	if err := legacytarball.Write(imgRef, image, f); err != nil {
 	if err := tarball.Write(imgRef, image, f); err != nil {
+		log.Debugf("❌❌❌ writing image to tar-ball failed")
 		return "", fmt.Errorf("cannot write image file %q, reason: %w",
 			imageSavePathName, err)
 	}
@@ -98,8 +107,9 @@ func SaveImageToFile(ctx context.Context,
 		return "", fmt.Errorf("cannot determine length of written image file %q, reason: %w",
 			imageSavePathName, err)
 	}
-	log.Info(fmt.Sprintf("   🖭  written %d bytes of 🖼  image with ID %s",
-		totalWritten, filename[:12]))
+	duration := time.Duration(math.Ceil(time.Since(start).Seconds())) * time.Second
+	log.Infof("   🖭  written %d bytes of 🖼  image with ID %s in %s",
+		totalWritten, filename[:12], duration)
 	return
 }
 
@@ -116,15 +126,18 @@ func hasLocalImage(
 	wantPlatform *ociv1.Platform,
 ) (ociv1.Image, error) {
 	if client == nil {
+		log.Debugf("🐛 no client, so not checking locally")
 		return nil, nil
 	}
 	// Is the correct image already locally available?
+	log.Debugf("🐛 checking if image %s is locally available...", iref)
 	image, err := daemon.Image(iref,
 		daemon.WithContext(ctx), daemon.WithClient(client))
 	if err != nil {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+		log.Debugf("🐛 image %s is not locally available", iref)
 		return nil, nil // stay silent; no daemon, no such image, no whatever, ...
 	}
 	config, err := image.ConfigFile()
@@ -136,8 +149,10 @@ func hasLocalImage(
 			iref.String(), err)
 	}
 	if hasPf := config.Platform(); hasPf == nil || !hasPf.Satisfies(*wantPlatform) {
+		log.Debugf("🐛 image %s is not locally available (may not satisfy requested platform)", iref)
 		return nil, nil
 	}
+	log.Debugf("🐛 image %s is locally available", iref)
 	return image, nil
 }
 

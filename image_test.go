@@ -24,7 +24,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/image"
 	"github.com/google/go-containerregistry/pkg/name"
 	ociv1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/moby/moby/client"
@@ -98,7 +98,7 @@ var _ = Describe("image pulling and saving", Ordered, func() {
 	When("checking with the daemon first for a local image", func() {
 
 		It("reports no error and returns no image if not available locally", func(ctx context.Context) {
-			_, _ = moby.ImageRemove(ctx, canaryImageRef, types.ImageRemoveOptions{
+			_, _ = moby.ImageRemove(ctx, canaryImageRef, image.RemoveOptions{
 				Force:         true, // ensure test coverage
 				PruneChildren: true,
 			})
@@ -117,7 +117,7 @@ var _ = Describe("image pulling and saving", Ordered, func() {
 
 		It("ignores unsatisfying platform", func(ctx context.Context) {
 			Expect(pullLimiter.Wait(ctx)).To(Succeed())
-			r := Successful(moby.ImagePull(ctx, canaryImageRef, types.ImagePullOptions{
+			r := Successful(moby.ImagePull(ctx, canaryImageRef, image.PullOptions{
 				Platform: canaryPlatform,
 			}))
 			closeOnce := Once(func() {
@@ -134,7 +134,7 @@ var _ = Describe("image pulling and saving", Ordered, func() {
 
 		It("returns local image", func(ctx context.Context) {
 			Expect(pullLimiter.Wait(ctx)).To(Succeed())
-			r := Successful(moby.ImagePull(ctx, canaryImageRef, types.ImagePullOptions{
+			r := Successful(moby.ImagePull(ctx, canaryImageRef, image.PullOptions{
 				Platform: canaryPlatform,
 			}))
 			closeOnce := Once(func() {

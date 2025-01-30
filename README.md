@@ -47,6 +47,14 @@ for:
 - enforcing `mem_limit` service configuration (as this seems to be the most
   common stumbling block in a survey of one sample).
 
+## Note
+
+> [!IMPORTANT]
+> As of v0.11.0, tiap creates the image tar-balls inside .app files in
+> _non_-legacy format, in order to be able to properly process newer (base)
+> images. This requires a moderately recent IEM and is known to work with
+> IE(v)D versions 1.19 and later.
+
 ## CLI
 
 The command
