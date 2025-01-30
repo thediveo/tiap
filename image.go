@@ -20,14 +20,17 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
+	"time"
 
-	"github.com/google/go-containerregistry/pkg/legacy/tarball"
+	// legacytarball "github.com/google/go-containerregistry/pkg/legacy/tarball"
 	"github.com/google/go-containerregistry/pkg/name"
 	ociv1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/daemon"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -51,14 +54,13 @@ func SaveImageToFile(ctx context.Context,
 	savedir string,
 	optclient daemon.Client,
 ) (filename string, err error) {
-	log.Debugf("🐛 saving image to file...")
+	log.Debugf("🐛 pulling and saving image %s to file...", imageref)
 	imgRef, err := name.ParseReference(
 		imageref, name.WithDefaultRegistry(DefaultRegistry))
 	if err != nil {
 		return "", fmt.Errorf("invalid image reference %q: %w",
 			imageref, err)
 	}
-	log.Debugf("🐛 image reference: %s", imgRef)
 
 	wantPlatform, err := ociv1.ParsePlatform(platform)
 	if err != nil {
@@ -92,7 +94,11 @@ func SaveImageToFile(ctx context.Context,
 			imageSavePathName, err)
 	}
 	defer f.Close()
+	log.Debugf("🐛 writing image %s to tar-ball...", imageref)
+	start := time.Now()
+	//	if err := legacytarball.Write(imgRef, image, f); err != nil {
 	if err := tarball.Write(imgRef, image, f); err != nil {
+		log.Debugf("❌❌❌ writing image to tar-ball failed")
 		return "", fmt.Errorf("cannot write image file %q, reason: %w",
 			imageSavePathName, err)
 	}
@@ -101,8 +107,9 @@ func SaveImageToFile(ctx context.Context,
 		return "", fmt.Errorf("cannot determine length of written image file %q, reason: %w",
 			imageSavePathName, err)
 	}
-	log.Info(fmt.Sprintf("   🖭  written %d bytes of 🖼  image with ID %s",
-		totalWritten, filename[:12]))
+	duration := time.Duration(math.Ceil(time.Since(start).Seconds())) * time.Second
+	log.Infof("   🖭  written %d bytes of 🖼  image with ID %s in %s",
+		totalWritten, filename[:12], duration)
 	return
 }
 

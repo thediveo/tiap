@@ -23,9 +23,11 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"math/big"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/google/go-containerregistry/pkg/v1/daemon"
 	"github.com/otiai10/copy"
@@ -215,6 +217,11 @@ func (a *App) PullAndWriteCompose(
 // indicated by “out”.
 func (a *App) Package(out string) error {
 	log.Info("🌯  wrapping up...")
+	start := time.Now()
+	defer func() {
+		duration := time.Duration(math.Ceil(time.Since(start).Seconds())) * time.Second
+		log.Infof("🌯  app package %s written in %s", out, duration)
+	}()
 	// Calculate and write digests
 	digestJson, err := os.Create(filepath.Join(a.tmpDir, "digests.json"))
 	if err != nil {
