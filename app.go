@@ -32,6 +32,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/daemon"
 	"github.com/otiai10/copy"
 	log "github.com/sirupsen/logrus"
+	"github.com/thediveo/tiap/interpolate"
 	"golang.org/x/exp/slices"
 )
 
@@ -112,16 +113,24 @@ func (a *App) Done() {
 	}
 }
 
+// Interpolate all variables in the app's composer project using the specified
+// variables, updating the project's YAML data accordingly. In case of
+// interpolation problems, it returns an error, otherwise nil.
+func (a *App) Interpolate(vars map[string]string) error {
+	return a.project.Interpolate(vars)
+}
+
 // SetDetails sets the semver (“versionNumber”, oh well) of this release, notes
 // (if any) and optional architecture, and then writes a new “detail.json”
 // into the build directory. This automatically sets the versionId to some
 // suitable value behind the scenes. At least we think that it might be a
 // suitable versionId value.
-func (a *App) SetDetails(semver string, releasenotes string, iearch string) error {
+func (a *App) SetDetails(semver string, releasenotes string, iearch string, vars map[string]string) error {
 	return setDetails(
 		filepath.Join(a.tmpDir, "detail.json"),
 		a.repo,
-		semver, releasenotes, iearch)
+		semver, releasenotes, iearch,
+		vars)
 }
 
 func setDetails(
@@ -130,7 +139,10 @@ func setDetails(
 	semver string,
 	releasenotes string,
 	iearch string,
+	vars map[string]string,
 ) error {
+	// First read in and parse the detail.json file, before working on the, erm,
+	// details.
 	detailJSON, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("cannot read detail.json, reason: %w", err)
@@ -140,6 +152,18 @@ func setDetails(
 	err = json.Unmarshal(detailJSON, &details)
 	if err != nil {
 		return fmt.Errorf("malformed detail.json, reason: %w", err)
+	}
+
+	// If interpolation has been enabled, interpolate all variables that might
+	// be lurking in the string elements of the JSON data, either in plain
+	// strings, object field values, or inside arrays of string values.
+	if vars != nil {
+		log.Debugf("🐛 interpolating detail.json environment variables")
+		interpolDetails, err := interpolate.Variables(details, vars)
+		if err != nil {
+			return fmt.Errorf("malformed detail.json, reason: %w", err)
+		}
+		details = interpolDetails // *scnr*
 	}
 
 	// dunno what versionId encodes, it seems to suffice that it is just a
@@ -159,7 +183,9 @@ func setDetails(
 	details["versionNumber"] = semver
 	details["versionId"] = versionId
 
-	details["releaseNotes"] = releasenotes
+	if releasenotes != "" {
+		details["releaseNotes"] = releasenotes
+	}
 
 	// set the IE App architecture only if it isn't empty and it's not the
 	// default (x86-64) architecture.

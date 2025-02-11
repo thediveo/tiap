@@ -2,8 +2,8 @@
 
 [![PkgGoDev](https://img.shields.io/badge/-reference-blue?logo=go&logoColor=white&labelColor=505050)](https://pkg.go.dev/github.com/thediveo/tiap)
 [![GitHub](https://img.shields.io/github/license/thediveo/tiap)](https://img.shields.io/github/license/thediveo/tiap)
-![build and test](https://github.com/thediveo/tiap/workflows/build%20and%20test/badge.svg?branch=master)
-![Coverage](https://img.shields.io/badge/Coverage-93.2%25-brightgreen)
+![build and test](https://github.com/thediveo/tiap/actions/workflows/buildandtest.yaml/badge.svg?branch=master)
+![Coverage](https://img.shields.io/badge/Coverage-95.6%25-brightgreen)
 [![Go Report Card](https://goreportcard.com/badge/github.com/thediveo/tiap)](https://goreportcard.com/report/github.com/thediveo/tiap)
 
 `tiap` is a small Go module and CLI tool to easily create Industrial Edge `.app`
@@ -12,12 +12,15 @@ required container images based on your app's composer project and finally
 bundling all up in an `.app` package. The `.app` file then can be imported by
 users into their IEM systems.
 
+## Features
+
 - simple to automatically download and use within your pipeline:
   ```bash
   # >>> consider pinning tiap to a specific release version <<<
   go run github.com/thediveo/tiap/cmd/tiap@latest \
     -o hellorld.app hellorldapp/
   ```
+
 - defaults to using `git describe` to set the app version, or set explicitly
   using `--app-version $SEMVER`. Even accepts `v` prefixed semvers and then
   drops the prefix.
@@ -26,9 +29,9 @@ users into their IEM systems.
   Docker daemon in your dev system or in pipelines, or to fiddle around with
   `socat` to reroute a localhost TCP port to the Docker socker.
 
-  However, in view of supporting IE apps for different (CPU) architectures we
-  recommend to never package image files from the local daemon, but instead to
-  only pull from a (remote) registry. For this, we recommend using
+  However, in view of supporting IE apps for different (CPU) architectures **we
+  recommend to never package image files from the local daemon**, but instead to
+  only pull from a (remote) registry. For this, we recommend sticking to
   `--pull-always`.
 
   ```bash
@@ -36,16 +39,53 @@ users into their IEM systems.
     -o hellorld.app --pull-always hellorldapp/
   ```
   
+- environment variable interpolation in both the composer file, as well as the
+  `details.json` (see details below). 
+
 - no need to deal with stateful IE app publisher workspaces.
 
 - small footprint.
 
-Please note that `tiap` **doesn't lint** the Docker composer project, except
-for:
+## Compose Project Safety Checks
+
+Please note that while `tiap` **doesn't lint** the Docker composer project, it
+still does the following safety checks:
+
 - rejecting `:latest` image references (yes, we're more strict than IE App
     Publisher here for reasons that still hurt),
+
 - enforcing `mem_limit` service configuration (as this seems to be the most
   common stumbling block in a survey of one sample).
+
+## Environment Variable Interpolation
+
+`tiap` supports variable interpolation for both the composer file, as well as
+`details.json`. It supports:
+
+- `$FOO`
+- `${FOO}`
+  - `${FOO:-default}` and `${FOO-default}`
+  - `${FOO:?err}` and `${FOO?err}`
+  - `${FOO:+replacement}` and `${FOO+replacement}` (this is useful in such cases
+    as adding optional newline padding when a certain addition text env var has
+    been defined, et cetera.)
+
+`tiap` interpolates using the environment variables it was started with; there
+is no support for `.env` files so far (PR welcome).
+
+Please note in case of `details.json`:
+- `versionNumber` is always set via the `--version` CLI flag. If the value to
+  `--version` is empty (`""`), `tiap` runs [`git
+  describe`](https://git-scm.com/docs/git-describe) on the current repository to
+  find the most recent tag that is reachable from HEAD.
+- `versionID` is automatically determined from he SHA256 hash of `--version` and
+  the repository name.
+- `releaseNotes` can be set using `--release-notes` and in this case no further
+  interpolation occurs on the release notes; instead, the caller needs to
+  interpolate any environment variables before executing `tiap`. But if
+  `--release-notes` isn't used or an empty value (`""`) specified, then
+  interpolation occurs immediately after reading `details.json` and the result
+  is kept.
 
 ## Note
 
@@ -169,6 +209,21 @@ pass literal newlines). Double quotes must be always escaped as `\"`.
 
 However, be careful that your shell isn't messing around with your escaping on
 its own.
+
+## Tinkering
+
+When tinkering with the `tiap` source code base, the recommended way is now a
+devcontainer environment. The devcontainer specified in this repository
+contains:
+- `Docker-in-Docker`
+- `gocover` command to run all tests with coverage, updating the README coverage
+  badge automatically after successful runs.
+- Go package documentation is served in the background on port TCP/HTTP `6060`
+  of the devcontainer.
+- [`go-mod-upgrade`](https://github.com/oligot/go-mod-upgrade)
+- [`goreportcard-cli`](https://github.com/gojp/goreportcard).
+- [`pin-github-action`](https://github.com/mheap/pin-github-action) for
+  maintaining Github Actions.
 
 ## Copyright and License
 

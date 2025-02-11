@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 
 	"github.com/sirupsen/logrus"
 
@@ -32,8 +33,8 @@ var _ = Describe("IE app building", func() {
 	Context("IE app details", func() {
 
 		It("rejects a missing or app details", func() {
-			Expect(setDetails("testdata/details/malformed/missing.json", "", "", "", "")).NotTo(Succeed())
-			Expect(setDetails("testdata/details/malformed/detail.json", "", "", "", "")).NotTo(Succeed())
+			Expect(setDetails("testdata/details/malformed/missing.json", "", "", "", "", nil)).NotTo(Succeed())
+			Expect(setDetails("testdata/details/malformed/detail.json", "", "", "", "", nil)).NotTo(Succeed())
 		})
 
 		When("setting and writing details", Ordered, func() {
@@ -62,7 +63,7 @@ var _ = Describe("IE app building", func() {
 			})
 
 			It("updates app details with version", func() {
-				Expect(setDetails(tmpPath, "hellorld", semver, "notes", "")).To(Succeed())
+				Expect(setDetails(tmpPath, "hellorld", semver, "notes", "", nil)).To(Succeed())
 				details = Successful(os.ReadFile(tmpPath))
 				var d map[string]any
 				Expect(json.Unmarshal([]byte(details), &d)).To(Succeed())
@@ -73,7 +74,7 @@ var _ = Describe("IE app building", func() {
 			})
 
 			It("doesn't set the default architecture", func() {
-				Expect(setDetails(tmpPath, "hellorld", semver, "notes", DefaultIEAppArch)).To(Succeed())
+				Expect(setDetails(tmpPath, "hellorld", semver, "notes", DefaultIEAppArch, nil)).To(Succeed())
 				details = Successful(os.ReadFile(tmpPath))
 				var d map[string]any
 				Expect(json.Unmarshal([]byte(details), &d)).To(Succeed())
@@ -81,7 +82,7 @@ var _ = Describe("IE app building", func() {
 			})
 
 			It("sets the default architecture based on (non-default) platform", func() {
-				Expect(setDetails(tmpPath, "hellorld", semver, "notes", "arm64")).To(Succeed())
+				Expect(setDetails(tmpPath, "hellorld", semver, "notes", "arm64", nil)).To(Succeed())
 				details = Successful(os.ReadFile(tmpPath))
 				var d map[string]any
 				Expect(json.Unmarshal([]byte(details), &d)).To(Succeed())
@@ -156,10 +157,34 @@ var _ = Describe("IE app building", func() {
 		GrabLog(logrus.InfoLevel)
 		a := Successful(NewApp("testdata/app"))
 		defer a.Done()
-		Expect(a.SetDetails("1.2.3-faselblah", "", "")).To(Succeed())
+		Expect(a.SetDetails("1.2.3-faselblah", "", "", nil)).To(Succeed())
 		Expect(pullLimiter.Wait(ctx)).To(Succeed())
 		Expect(a.PullAndWriteCompose(ctx, canaryPlatform, nil)).To(Succeed())
 		Expect(a.Package("/tmp/hellorld.app")).To(Succeed())
+	})
+
+	It("interpolates", func() {
+		GrabLog(logrus.InfoLevel)
+		a := Successful(NewApp("testdata/interpolated-app"))
+		defer a.Done()
+		vars := map[string]string{
+			"IMGREF":        "latest",
+			"DESCRIPTION":   "a famous description",
+			"RELEASE_NOTES": "the release notes",
+		}
+		Expect(a.Interpolate(vars)).To(Succeed())
+		Expect(a.project.yaml).To(
+			HaveKeyWithValue("services",
+				HaveKeyWithValue("hellorld",
+					HaveKeyWithValue("image", "busybox:latest"))))
+		Expect(a.SetDetails("1.2.3", "", "", vars)).To(Succeed())
+		detailjson := Successful(os.ReadFile(filepath.Join(a.tmpDir, "detail.json")))
+		var details map[string]any
+		Expect(json.Unmarshal(detailjson, &details)).To(Succeed())
+		Expect(details).To(HaveKeyWithValue("releaseNotes",
+			"the release notes"))
+		Expect(details).To(HaveKeyWithValue("description",
+			"a famous description"))
 	})
 
 })

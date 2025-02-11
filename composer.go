@@ -29,6 +29,7 @@ import (
 	"github.com/docker/go-units"
 	"github.com/google/go-containerregistry/pkg/v1/daemon"
 	log "github.com/sirupsen/logrus"
+	"github.com/thediveo/tiap/interpolate"
 	"gopkg.in/yaml.v3"
 )
 
@@ -71,6 +72,18 @@ func NewComposerProject(path string) (*ComposerProject, error) {
 		return nil, fmt.Errorf("malformed composer project, reason: %w", err)
 	}
 	return p, nil
+}
+
+// Interpolate all variables in this composer project using the specified
+// variables, updating the project's YAML data accordingly. In case of
+// interpolation problems, it returns an error, otherwise nil.
+func (cp *ComposerProject) Interpolate(vars map[string]string) error {
+	yaml, err := interpolate.Variables(cp.yaml, vars)
+	if err != nil {
+		return err
+	}
+	cp.yaml = yaml
+	return nil
 }
 
 // ServiceImages maps service names in Docker composer projects to their image
