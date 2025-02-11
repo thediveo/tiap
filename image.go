@@ -26,6 +26,7 @@ import (
 	"time"
 
 	// legacytarball "github.com/google/go-containerregistry/pkg/legacy/tarball"
+	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	ociv1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/daemon"
@@ -157,7 +158,9 @@ func hasLocalImage(
 }
 
 // pullRemoteImage pull the specified image for the specified platform from a
-// (remote) registry.
+// (remote) registry. Depending on the registry, authentication might be
+// necessary. We follow the tl;dr path as laid out by
+// https://github.com/google/go-containerregistry/blob/main/pkg/authn/README.md.
 func pullRemoteImage(
 	ctx context.Context,
 	imageref name.Reference,
@@ -165,7 +168,8 @@ func pullRemoteImage(
 ) (ociv1.Image, error) {
 	image, err := remote.Image(imageref,
 		remote.WithContext(ctx),
-		remote.WithPlatform(*wantPlatform))
+		remote.WithPlatform(*wantPlatform),
+		remote.WithAuthFromKeychain(authn.DefaultKeychain))
 	if err != nil {
 		return nil, fmt.Errorf("cannot pull image %s, reason: %w",
 			imageref.String(), err)
