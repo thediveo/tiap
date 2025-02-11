@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -28,7 +29,6 @@ import (
 	"github.com/containerd/platforms"
 	"github.com/moby/moby/client"
 	ispecsv1 "github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/sirupsen/logrus"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/thediveo/tiap"
@@ -36,16 +36,22 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// Names of CLI flags
 const (
-	outnameFlag      = "out"
-	appVersionFlag   = "app-version"
-	releaseNotesFlag = "release-notes"
-	platformFlag     = "platform"
-	pullAlwaysFlag   = "pull-always"
-	dockerHostFlag   = "host"
-	debugFlag        = "debug"
+	outnameFlagName       = "out"
+	appVersionFlagName    = "app-version"
+	releaseNotesFlagName  = "release-notes"
+	platformFlagName      = "platform"
+	pullAlwaysFlagName    = "pull-always"
+	dockerHostFlagName    = "host"
+	interpolationFlagName = "interpolate"
+	debugFlagName         = "debug"
 )
 
+// successfully expects the returned value-error pair to be without error;
+// otherwise, it panics with the passed error. Use this helper in those
+// situations where there is a code problem that the user cannot fix (except by
+// hacking the source).
 func successfully[R any](r R, err error) R {
 	if err != nil {
 		panic(err)
@@ -53,6 +59,8 @@ func successfully[R any](r R, err error) R {
 	return r
 }
 
+// unerringly expects the returned value-error pair to be without error;
+// otherwise, it logs an error and exits with code 1.
 func unerringly[R any](r R, err error) R {
 	if err != nil {
 		log.Fatal(err.Error())
@@ -109,13 +117,14 @@ func newRootCmd() (rootCmd *cobra.Command) {
 			log.Info(fmt.Sprintf("   %s", rootCmd.Version))
 			log.Info("⚖  Apache 2.0 License")
 
-			if successfully(rootCmd.Flags().GetBool(debugFlag)) {
-				logrus.SetLevel(log.DebugLevel)
+			if successfully(rootCmd.Flags().GetBool(debugFlagName)) {
+				log.SetLevel(log.DebugLevel)
 			}
 			log.Debug("🐛 debug logging enabled")
 
-			appSemver := successfully(rootCmd.Flags().GetString(appVersionFlag))
+			appSemver := successfully(rootCmd.Flags().GetString(appVersionFlagName))
 			if appSemver == "" {
+				log.Debug("🐛 determining semvar using git")
 				out, err := exec.Command("git", "describe").CombinedOutput()
 				if err != nil {
 					log.Errorf("git describe: %s", out)
@@ -128,13 +137,14 @@ func newRootCmd() (rootCmd *cobra.Command) {
 				return fmt.Errorf("invalid app semver %q, reason: %w",
 					appSemver, err)
 			}
+			log.Debugf("🐛 using semver %s", appSemver)
 
 			rn := strings.Replace(
-				successfully(rootCmd.Flags().GetString(releaseNotesFlag)),
+				successfully(rootCmd.Flags().GetString(releaseNotesFlagName)),
 				"\n", "\\n", -1)
 			releaseNotes, err := strconv.Unquote(`"` + rn + `"`)
 			if err != nil {
-				log.Fatalf("release notes %q: %s", successfully(rootCmd.Flags().GetString(releaseNotesFlag)), err.Error())
+				log.Fatalf("release notes %q: %s", successfully(rootCmd.Flags().GetString(releaseNotesFlagName)), err.Error())
 			}
 
 			app, err := tiap.NewApp(args[0])
@@ -143,8 +153,19 @@ func newRootCmd() (rootCmd *cobra.Command) {
 			}
 			defer app.Done()
 
+			var vars map[string]string // nil means no interpolation at all
+			if successfully(rootCmd.Flags().GetBool(interpolationFlagName)) {
+				vars = envVars()
+			}
+			if vars != nil {
+				if err := app.Interpolate(vars); err != nil {
+					log.Fatalf("interpolating compose project variables: %s",
+						err.Error())
+				}
+			}
+
 			platform := unerringly(
-				platforms.Parse(successfully(rootCmd.Flags().GetString(platformFlag))))
+				platforms.Parse(successfully(rootCmd.Flags().GetString(platformFlagName))))
 			if platform.OS != "linux" && platform.OS != runtime.GOOS {
 				// warn when the platform OS was (explicitly) set to something
 				// different than linux; we try to not warn in case tiap is run
@@ -159,16 +180,16 @@ func newRootCmd() (rootCmd *cobra.Command) {
 			appArch := denormalize(platform).Architecture
 			log.Infof("🚊  denormalized IE App architecture: %q", appArch)
 
-			err = app.SetDetails(appSemver, releaseNotes, appArch)
+			err = app.SetDetails(appSemver, releaseNotes, appArch, envVars())
 			if err != nil {
 				return err
 			}
 
-			pullAlways := successfully(rootCmd.Flags().GetBool(pullAlwaysFlag))
+			pullAlways := successfully(rootCmd.Flags().GetBool(pullAlwaysFlagName))
 			var moby *client.Client
 			if !pullAlways {
 				log.Debugf("🐛 creating Docker/Moby client")
-				dockerHost := successfully(rootCmd.Flags().GetString(dockerHostFlag))
+				dockerHost := successfully(rootCmd.Flags().GetString(dockerHostFlagName))
 				opts := []client.Opt{
 					client.WithAPIVersionNegotiation(),
 				}
@@ -193,36 +214,42 @@ func newRootCmd() (rootCmd *cobra.Command) {
 				return err
 			}
 
-			outname := successfully(rootCmd.Flags().GetString(outnameFlag))
+			outname := successfully(rootCmd.Flags().GetString(outnameFlagName))
 			if filepath.Ext(outname) == "" {
 				outname = outname + ".app"
 			}
 			return app.Package(outname)
 		},
 	}
-	rootCmd.Flags().StringP(outnameFlag, "o", "",
+
+	flags := rootCmd.Flags()
+
+	flags.StringP(outnameFlagName, "o", "",
 		"mandatory: name of app package file to write")
-	if err := rootCmd.MarkFlagRequired(outnameFlag); err != nil {
+	if err := rootCmd.MarkFlagRequired(outnameFlagName); err != nil {
 		panic(err)
 	}
 
-	rootCmd.Flags().String(appVersionFlag, "",
+	flags.String(appVersionFlagName, "",
 		"app semantic version, defaults to git describe")
 
-	rootCmd.Flags().String(releaseNotesFlag, "",
+	flags.String(releaseNotesFlagName, "",
 		"release notes (interpreted as double-quoted Go string literal; use \\n, \\\", …)")
 
 	p := thisPlatform()
-	rootCmd.Flags().StringP(platformFlag, "p", "linux/"+p.Architecture,
+	flags.StringP(platformFlagName, "p", "linux/"+p.Architecture,
 		"platform to build app for")
 
-	rootCmd.Flags().Bool(pullAlwaysFlag, false,
+	flags.Bool(pullAlwaysFlagName, false,
 		"always pull image from remote registry, never use local images")
 
-	rootCmd.Flags().StringP(dockerHostFlag, "H", "",
+	flags.StringP(dockerHostFlagName, "H", "",
 		"Docker daemon socket to connect to (only if non-default and using local images)")
 
-	rootCmd.Flags().Bool(debugFlag, false,
+	flags.BoolP(interpolationFlagName, "i", false,
+		"interpolate env vars in compose project and detail.json")
+
+	flags.Bool(debugFlagName, false,
 		"enable debug logging")
 
 	if info, biok := debug.ReadBuildInfo(); biok {
@@ -239,4 +266,17 @@ func newRootCmd() (rootCmd *cobra.Command) {
 	}
 
 	return rootCmd
+}
+
+// envVars returns a map of key-value environment variables.
+func envVars() map[string]string {
+	envvars := map[string]string{}
+	for _, keyval := range os.Environ() {
+		fields := strings.SplitN(keyval, "=", 2)
+		if len(fields) < 2 {
+			continue
+		}
+		envvars[fields[0]] = fields[1]
+	}
+	return envvars
 }

@@ -1,0 +1,12 @@
+version: '2.3'
+services:
+  hellorld:
+    image: "busybox:${IMGREF}"
+    mem_limit: 8mb
+    command:
+      - "/bin/sh"
+      - "-c"
+      - "mkdir -p /www && echo Hellorld!>/www/index.html && httpd -f -p 5099 -h /www"
+    volumes:
+      - './publish/:/publish/'
+      - './cfg-data/:/cfg-data/'

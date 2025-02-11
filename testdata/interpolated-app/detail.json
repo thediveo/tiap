@@ -1,0 +1,19 @@
+{
+    "versionNumber": "",
+    "versionId": "",
+    "title": "Hellorld!",
+    "appId": "c535a6d381284839b458e3f572af18ce",
+    "restRedirectUrl": "",
+    "redirectSection": "hellorld",
+    "redirectUrl": "hellorld/",
+    "redirectType": "FromBoxReverseProxy",
+    "description": "${DESCRIPTION}",
+    "swarmModeEnable": false,
+    "required": [],
+    "releaseNotes": "${RELEASE_NOTES}",
+    "signUpType": "None",
+    "externalConfigurator": false,
+    "externalUrl": "",
+    "webAddress":"http://github.com/thediveo/tiap",
+    "isAppSecure": false
+}
