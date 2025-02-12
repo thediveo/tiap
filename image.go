@@ -23,6 +23,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"time"
 
 	// legacytarball "github.com/google/go-containerregistry/pkg/legacy/tarball"
@@ -126,7 +127,7 @@ func hasLocalImage(
 	iref name.Reference,
 	wantPlatform *ociv1.Platform,
 ) (ociv1.Image, error) {
-	if client == nil {
+	if client == nil || reflect.ValueOf(client).IsNil() {
 		log.Debugf("🐛 no client, so not checking locally")
 		return nil, nil
 	}
