@@ -127,6 +127,12 @@ func hasLocalImage(
 	iref name.Reference,
 	wantPlatform *ociv1.Platform,
 ) (ociv1.Image, error) {
+	// nota bene: IsNil() panics if it gets a zero value, such as a plain nil,
+	// or if the kind of value isn't chan, func, map, (unsafe) pointer,
+	// interface, or slice. Usually, we would need to guard IsNil() further than
+	// just shortcutting plain nil; but in this case demon.Client is an
+	// interface, so the type checking at compile time ensures that we get an
+	// interface value and IsNil then won't panic.
 	if client == nil || reflect.ValueOf(client).IsNil() {
 		log.Debugf("🐛 no client, so not checking locally")
 		return nil, nil
