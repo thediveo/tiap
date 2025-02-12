@@ -20,6 +20,19 @@
 				"request": "launch",
 				"mode": "auto",
 				"program": "${fileDirname}"
+			},
+			{
+				"name": "Debug tiap Command",
+				"type": "go",
+				"request": "launch",
+				"mode": "debug",
+				"program": "${workspaceFolder}/cmd/tiap",
+				"args": [
+					"--debug",
+					"--pull-always",
+					"-o", "/tmp/hellorld.app",
+					"${workspaceFolder}/testdata/app"
+				]
 			}
 		],
 		"compounds": []

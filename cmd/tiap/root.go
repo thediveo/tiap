@@ -246,6 +246,8 @@ func newRootCmd() (rootCmd *cobra.Command) {
 	flags.StringP(dockerHostFlagName, "H", "",
 		"Docker daemon socket to connect to (only if non-default and using local images)")
 
+	rootCmd.MarkFlagsMutuallyExclusive(pullAlwaysFlagName, dockerHostFlagName)
+
 	flags.BoolP(interpolationFlagName, "i", false,
 		"interpolate env vars in compose project and detail.json")
 
