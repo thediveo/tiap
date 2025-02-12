@@ -3,3 +3,4 @@ coverage.*
 /tiap
 /*.app
 /testdata/app/digests.json
+__debug*
