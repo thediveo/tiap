@@ -182,4 +182,14 @@ var _ = Describe("image pulling and saving", Ordered, func() {
 			canaryImageRef, canaryPlatform, tmpDirPath, nil /* ensure pull */)).Error().To(HaveOccurred())
 	})
 
+	It("does not crash when looking for a local image given a typed nil client", func(ctx context.Context) {
+		var moby *client.Client // a typed nil
+		Expect(func() {
+			_, _ = hasLocalImage(ctx,
+				moby,
+				Successful(name.ParseReference("x-foobar-x")),
+				nil)
+		}).NotTo(Panic())
+	})
+
 })
