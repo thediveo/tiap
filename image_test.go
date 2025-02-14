@@ -20,6 +20,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,7 +29,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	ociv1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/moby/moby/client"
-	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -153,7 +153,7 @@ var _ = Describe("image pulling and saving", Ordered, func() {
 	})
 
 	It("grabs an image, saves it to a .tar file and names it after the SHA256 of the image ref", slowSpec, func(ctx context.Context) {
-		GrabLog(logrus.DebugLevel)
+		GrabLog(slog.LevelDebug)
 
 		Expect(pullLimiter.Wait(ctx)).To(Succeed())
 		filename, err := SaveImageToFile(ctx,

@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"math"
 	"math/big"
 	"os"
@@ -31,7 +32,6 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/v1/daemon"
 	"github.com/otiai10/copy"
-	log "github.com/sirupsen/logrus"
 	"github.com/thediveo/tiap/interpolate"
 	"golang.org/x/exp/slices"
 )
@@ -65,7 +65,8 @@ func NewApp(source string) (a *App, err error) {
 	// Copy the "template" app file/folder structure into a temporary place, but
 	// skip any Docker composer file for now. However, the notice its directory
 	// as the "repository".
-	log.Info(fmt.Sprintf("🏗  creating temporary project copy in %q", tmpDir))
+	slog.Info("creating temporary project copy",
+		slog.String("path", tmpDir))
 	repo := ""
 	err = copy.Copy(source, tmpDir, copy.Options{
 		Skip: func(info os.FileInfo, src, dest string) (bool, error) {
@@ -86,7 +87,8 @@ func NewApp(source string) (a *App, err error) {
 	if err != nil {
 		return nil, errors.New("cannot determine relative repository path")
 	}
-	log.Info(fmt.Sprintf("🫙  app repository detected as %q", repo))
+	slog.Info("app repository detected",
+		slog.String("repo", repo))
 
 	// Try to locate and load the Docker composer project
 	//
@@ -108,7 +110,8 @@ func NewApp(source string) (a *App, err error) {
 func (a *App) Done() {
 	if a.tmpDir != "" {
 		os.RemoveAll(a.tmpDir)
-		log.Info(fmt.Sprintf("🧹  removed temporary folder %q", a.tmpDir))
+		slog.Info("removed temporary folder",
+			slog.String("path", a.tmpDir))
 		a.tmpDir = ""
 	}
 }
@@ -158,7 +161,7 @@ func setDetails(
 	// be lurking in the string elements of the JSON data, either in plain
 	// strings, object field values, or inside arrays of string values.
 	if vars != nil {
-		log.Debugf("🐛 interpolating detail.json environment variables")
+		slog.Debug("interpolating detail.json environment variables")
 		interpolDetails, err := interpolate.Variables(details, vars)
 		if err != nil {
 			return fmt.Errorf("malformed detail.json, reason: %w", err)
@@ -178,7 +181,9 @@ func setDetails(
 	var bi big.Int
 	bi.SetBytes(digester.Sum(nil))
 	versionId := bi.Text(62)[:32]
-	log.Info(fmt.Sprintf("📛  semver: %q -> app ID: %q", semver, versionId))
+	slog.Info("updated version ID based on semver",
+		slog.String("semver", semver),
+		slog.String("versionId", versionId))
 
 	details["versionNumber"] = semver
 	details["versionId"] = versionId
@@ -212,7 +217,7 @@ func (a *App) PullAndWriteCompose(
 	platform string,
 	optclient daemon.Client,
 ) error {
-	log.Info("🚚  pulling images and writing composer project...")
+	slog.Info("pulling images...")
 	serviceImages, err := a.project.Images()
 	if err != nil {
 		return err
@@ -227,6 +232,8 @@ func (a *App) PullAndWriteCompose(
 	if err != nil {
 		return err
 	}
+	slog.Info("images successfully pulled")
+	slog.Info("writing final compose project...")
 	composerf, err := os.Create(filepath.Join(a.tmpDir, a.repo, "docker-compose.yml"))
 	if err != nil {
 		return fmt.Errorf("cannot create Docker compose project file, reason: %w", err)
@@ -236,17 +243,20 @@ func (a *App) PullAndWriteCompose(
 	if err != nil {
 		return fmt.Errorf("cannot write Docker compose project file, reason: %w", err)
 	}
+	slog.Info("final compose project written")
 	return nil
 }
 
 // Package (finally) packages the IE app project in a IE app package tar file
 // indicated by “out”.
 func (a *App) Package(out string) error {
-	log.Info("🌯  wrapping up...")
+	slog.Info("wrapping up...")
 	start := time.Now()
 	defer func() {
 		duration := time.Duration(math.Ceil(time.Since(start).Seconds())) * time.Second
-		log.Infof("🌯  app package %s written in %s", out, duration)
+		slog.Info("IE app package",
+			slog.String("path", out),
+			slog.Duration("duration", duration))
 	}()
 	// Calculate and write digests
 	digestJson, err := os.Create(filepath.Join(a.tmpDir, "digests.json"))
@@ -260,6 +270,9 @@ func (a *App) Package(out string) error {
 	}
 
 	// Doctor Tarr and Professor Fether
+	slog.Info("creating IE app tar-ball",
+		slog.String("doctor", "Tarr"),
+		slog.String("professor", "Fether"))
 	tarball, err := os.Create(out)
 	if err != nil {
 		return fmt.Errorf("cannot create IE app package file, reason: %w", err)
@@ -275,7 +288,7 @@ func (a *App) Package(out string) error {
 		if path == "." {
 			return nil
 		}
-		log.Info(fmt.Sprintf("   📦  packaging %s", path))
+		slog.Info("packaging", slog.String("path", path))
 		stat, err := fs.Stat(rootfs, path)
 		if err != nil {
 			return err
@@ -309,6 +322,6 @@ func (a *App) Package(out string) error {
 	if err != nil {
 		return fmt.Errorf("cannot package IE app, reason: %w", err)
 	}
-	log.Info(fmt.Sprintf("✅  ...IE app package %q successfully created", out))
+	slog.Info("IE app package successfully created")
 	return nil // done and dusted.
 }

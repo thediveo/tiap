@@ -17,9 +17,8 @@ package tiap
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"os"
-
-	"github.com/sirupsen/logrus"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -29,7 +28,7 @@ import (
 var _ = Describe("IE app composer projects", Ordered, func() {
 
 	It("determines service images", func() {
-		GrabLog(logrus.InfoLevel)
+		GrabLog(slog.LevelInfo)
 		p := Successful(NewComposerProject("testdata/composer/hellorld/docker-compose.yml"))
 		imgs := Successful(p.Images())
 		Expect(imgs).To(And(
@@ -47,19 +46,19 @@ var _ = Describe("IE app composer projects", Ordered, func() {
 	})
 
 	It("rejects latest image references in projects", func() {
-		GrabLog(logrus.InfoLevel)
+		GrabLog(slog.LevelInfo)
 		p := Successful(LoadComposerProject("testdata/composer/latest"))
 		Expect(p.Images()).Error().To(MatchError(MatchRegexp(`service .* attempts to use latest`)))
 	})
 
 	It("loads project, pulls images, writes back", slowSpec, func(ctx context.Context) {
-		GrabLog(logrus.InfoLevel)
+		GrabLog(slog.LevelInfo)
 
 		By("setting up an empty transient testing directory")
 		tmpDirPath := Successful(os.MkdirTemp("", "tiap-test-*"))
 		defer os.RemoveAll(tmpDirPath)
 
-		GrabLog(logrus.InfoLevel)
+		GrabLog(slog.LevelInfo)
 
 		By("loading a composer project")
 		p := Successful(NewComposerProject("testdata/composer/hellorld/docker-compose.yml"))
@@ -109,7 +108,7 @@ var _ = Describe("IE app composer projects", Ordered, func() {
 		})
 
 		It("reports invalid services in project", func() {
-			GrabLog(logrus.InfoLevel)
+			GrabLog(slog.LevelInfo)
 			p := &ComposerProject{yaml: map[string]any{
 				"services": map[string]any{
 					"foo": 42,
@@ -135,7 +134,7 @@ var _ = Describe("IE app composer projects", Ordered, func() {
 		})
 
 		It("reports missing or incorrect service memory limit", func() {
-			GrabLog(logrus.InfoLevel)
+			GrabLog(slog.LevelInfo)
 			p := &ComposerProject{yaml: map[string]any{
 				"services": map[string]any{
 					"foo": map[string]any{

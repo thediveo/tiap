@@ -11,12 +11,12 @@ require (
 	github.com/docker/docker v27.5.1+incompatible
 	github.com/docker/go-units v0.5.0
 	github.com/google/go-containerregistry v0.20.3
+	github.com/lmittmann/tint v1.0.7
 	github.com/moby/moby v27.5.1+incompatible
 	github.com/onsi/ginkgo/v2 v2.22.2
 	github.com/onsi/gomega v1.36.2
 	github.com/opencontainers/image-spec v1.1.0
 	github.com/otiai10/copy v1.14.1
-	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.8.1
 	github.com/thediveo/once v0.9.2
 	github.com/thediveo/success v1.0.3
@@ -50,6 +50,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/otiai10/mint v1.6.3 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/spf13/pflag v1.0.6 // indirect
 	github.com/vbatts/tar-split v0.12.1 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect

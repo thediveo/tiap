@@ -17,10 +17,9 @@ package tiap
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
-
-	"github.com/sirupsen/logrus"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -47,7 +46,7 @@ var _ = Describe("IE app building", func() {
 			)
 
 			BeforeEach(func() {
-				GrabLog(logrus.InfoLevel)
+				GrabLog(slog.LevelInfo)
 				details = Successful(os.ReadFile("testdata/details/good/detail.json"))
 				tmpDetails := Successful(os.CreateTemp("", "details-*.json"))
 				tmpPath = tmpDetails.Name()
@@ -106,19 +105,19 @@ var _ = Describe("IE app building", func() {
 		})
 
 		It("reports when unable to read template files", func() {
-			GrabLog(logrus.InfoLevel)
+			GrabLog(slog.LevelInfo)
 			Expect(NewApp("/nothing-nada-nil")).Error().To(MatchError(
 				ContainSubstring("cannot copy app template structure")))
 		})
 
 		It("reports missing repo directory", func() {
-			GrabLog(logrus.InfoLevel)
+			GrabLog(slog.LevelInfo)
 			Expect(NewApp("testdata/brokenapp")).Error().To(MatchError(
 				ContainSubstring("project lacks Docker compose")))
 		})
 
 		It("reports when unable to load malformed composer project", func() {
-			GrabLog(logrus.InfoLevel)
+			GrabLog(slog.LevelInfo)
 			Expect(NewApp("testdata/brokencompose")).Error().To(MatchError(
 				ContainSubstring("malformed composer project")))
 		})
@@ -128,14 +127,14 @@ var _ = Describe("IE app building", func() {
 	When("packaging", func() {
 
 		It("reports error when digests cannot be stored", func() {
-			GrabLog(logrus.InfoLevel)
+			GrabLog(slog.LevelInfo)
 			a := &App{tmpDir: "/nowhere"}
 			Expect(a.Package("")).To(MatchError(
 				ContainSubstring("cannot create digests.json")))
 		})
 
 		It("reports error when app package cannot be created", func() {
-			GrabLog(logrus.InfoLevel)
+			GrabLog(slog.LevelInfo)
 			a := &App{tmpDir: "testdata/app"}
 			Expect(a.Package("/nada-nothing-nil")).To(MatchError(
 				ContainSubstring("cannot create IE app package file")))
@@ -144,7 +143,7 @@ var _ = Describe("IE app building", func() {
 	})
 
 	It("reports cancelled pull context", func() {
-		GrabLog(logrus.InfoLevel)
+		GrabLog(slog.LevelInfo)
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 		a := Successful(NewApp("testdata/app"))
@@ -154,7 +153,7 @@ var _ = Describe("IE app building", func() {
 	})
 
 	It("loads an app template, sets details, pulls, and packages", slowSpec, func(ctx context.Context) {
-		GrabLog(logrus.InfoLevel)
+		GrabLog(slog.LevelInfo)
 		a := Successful(NewApp("testdata/app"))
 		defer a.Done()
 		Expect(a.SetDetails("1.2.3-faselblah", "", "", nil)).To(Succeed())
@@ -164,7 +163,7 @@ var _ = Describe("IE app building", func() {
 	})
 
 	It("interpolates", func() {
-		GrabLog(logrus.InfoLevel)
+		GrabLog(slog.LevelInfo)
 		a := Successful(NewApp("testdata/interpolated-app"))
 		defer a.Done()
 		vars := map[string]string{

@@ -14,12 +14,11 @@ package tiap
 
 import (
 	"context"
-	"os"
+	"log/slog"
 	"testing"
 	"time"
 
 	"github.com/moby/moby/client"
-	"github.com/sirupsen/logrus"
 	"golang.org/x/time/rate"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -33,14 +32,29 @@ var slowSpec = NodeTimeout(120 * time.Second)
 // the same image over and over again.
 var pullLimiter = rate.NewLimiter(rate.Every(2*time.Second), 1)
 
-func GrabLog(level logrus.Level) {
-	origLevel := logrus.GetLevel()
-	logrus.SetOutput(GinkgoWriter)
-	logrus.SetLevel(level)
-	DeferCleanup(func() {
-		logrus.SetLevel(origLevel)
-		logrus.SetOutput(os.Stderr)
-	})
+// GrabLog grabs any logging output and feeds it into Ginkgo, so it will show up
+// only in case a test fails, but otherwise stay silent.
+func GrabLog(level slog.Level) {
+	defaultLogger := slog.Default()
+	// determine handler level the hard way, as unfortunately there is no easy
+	// way...
+	defaultHandler := defaultLogger.Handler()
+	for _, level := range []slog.Level{
+		slog.LevelDebug, slog.LevelInfo, slog.LevelWarn, slog.LevelError,
+	} {
+		if defaultHandler.Enabled(context.Background(), level) {
+			slog.SetDefault(slog.New(
+				slog.NewJSONHandler(GinkgoWriter, &slog.HandlerOptions{
+					Level: level,
+				})))
+
+			DeferCleanup(func() {
+				slog.SetDefault(defaultLogger)
+			})
+			return
+		}
+	}
+	Fail("cannot determine slog handler level")
 }
 
 const (
