@@ -10,7 +10,7 @@
 // License for the specific language governing permissions and limitations
 // under the License.
 
-package tiap
+package command
 
 import (
 	"testing"
@@ -22,7 +22,7 @@ import (
 
 var slowSpec = NodeTimeout(120 * time.Second)
 
-func TestTiap(t *testing.T) {
+func TestTiapCommand(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "tiap package")
+	RunSpecs(t, "tiap/cmd/tiap/command package")
 }

@@ -3,7 +3,7 @@
 [![PkgGoDev](https://img.shields.io/badge/-reference-blue?logo=go&logoColor=white&labelColor=505050)](https://pkg.go.dev/github.com/thediveo/tiap)
 [![GitHub](https://img.shields.io/github/license/thediveo/tiap)](https://img.shields.io/github/license/thediveo/tiap)
 ![build and test](https://github.com/thediveo/tiap/actions/workflows/buildandtest.yaml/badge.svg?branch=master)
-![Coverage](https://img.shields.io/badge/Coverage-95.6%25-brightgreen)
+![Coverage](https://img.shields.io/badge/Coverage-91.0%25-brightgreen)
 [![Go Report Card](https://goreportcard.com/badge/github.com/thediveo/tiap)](https://goreportcard.com/report/github.com/thediveo/tiap)
 
 `tiap` is a small Go module and CLI tool to easily create Industrial Edge `.app`

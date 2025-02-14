@@ -1,7 +1,7 @@
 version: '2.3'
 services:
   hellorld:
-    image: "busybox:stable"
+    image: "${REGISTRY}busybox:stable"
     mem_limit: 8mb
     command:
       - "/bin/sh"

@@ -20,10 +20,12 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
+
+	"github.com/thediveo/tiap/test/grab"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	. "github.com/thediveo/once"
 	. "github.com/thediveo/success"
 )
 
@@ -46,13 +48,13 @@ var _ = Describe("IE app building", func() {
 			)
 
 			BeforeEach(func() {
-				GrabLog(slog.LevelInfo)
+				DeferCleanup(grab.Log(GinkgoWriter, slog.LevelInfo))
 				details = Successful(os.ReadFile("testdata/details/good/detail.json"))
 				tmpDetails := Successful(os.CreateTemp("", "details-*.json"))
 				tmpPath = tmpDetails.Name()
-				closeOnce := Once(func() {
+				closeOnce := sync.OnceFunc(func() {
 					tmpDetails.Close()
-				}).Do
+				})
 				DeferCleanup(func() {
 					closeOnce()
 					Expect(os.Remove(tmpPath)).To(Succeed())
@@ -105,19 +107,19 @@ var _ = Describe("IE app building", func() {
 		})
 
 		It("reports when unable to read template files", func() {
-			GrabLog(slog.LevelInfo)
+			defer grab.Log(GinkgoWriter, slog.LevelInfo)()
 			Expect(NewApp("/nothing-nada-nil")).Error().To(MatchError(
 				ContainSubstring("cannot copy app template structure")))
 		})
 
 		It("reports missing repo directory", func() {
-			GrabLog(slog.LevelInfo)
+			defer grab.Log(GinkgoWriter, slog.LevelInfo)()
 			Expect(NewApp("testdata/brokenapp")).Error().To(MatchError(
 				ContainSubstring("project lacks Docker compose")))
 		})
 
 		It("reports when unable to load malformed composer project", func() {
-			GrabLog(slog.LevelInfo)
+			defer grab.Log(GinkgoWriter, slog.LevelInfo)()
 			Expect(NewApp("testdata/brokencompose")).Error().To(MatchError(
 				ContainSubstring("malformed composer project")))
 		})
@@ -127,14 +129,14 @@ var _ = Describe("IE app building", func() {
 	When("packaging", func() {
 
 		It("reports error when digests cannot be stored", func() {
-			GrabLog(slog.LevelInfo)
+			defer grab.Log(GinkgoWriter, slog.LevelInfo)()
 			a := &App{tmpDir: "/nowhere"}
 			Expect(a.Package("")).To(MatchError(
 				ContainSubstring("cannot create digests.json")))
 		})
 
 		It("reports error when app package cannot be created", func() {
-			GrabLog(slog.LevelInfo)
+			defer grab.Log(GinkgoWriter, slog.LevelInfo)()
 			a := &App{tmpDir: "testdata/app"}
 			Expect(a.Package("/nada-nothing-nil")).To(MatchError(
 				ContainSubstring("cannot create IE app package file")))
@@ -143,27 +145,30 @@ var _ = Describe("IE app building", func() {
 	})
 
 	It("reports cancelled pull context", func() {
-		GrabLog(slog.LevelInfo)
+		defer grab.Log(GinkgoWriter, slog.LevelInfo)()
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 		a := Successful(NewApp("testdata/app"))
+		Expect(a.project.Interpolate(nil)).To(Succeed())
 		defer a.Done()
 		Expect(a.PullAndWriteCompose(ctx, canaryPlatform, nil)).To(MatchError(
 			ContainSubstring("context canceled")))
 	})
 
 	It("loads an app template, sets details, pulls, and packages", slowSpec, func(ctx context.Context) {
-		GrabLog(slog.LevelInfo)
+		defer grab.Log(GinkgoWriter, slog.LevelInfo)()
 		a := Successful(NewApp("testdata/app"))
+		Expect(a.project.Interpolate(map[string]string{
+			"REGISTRY": localRegistry,
+		})).To(Succeed())
 		defer a.Done()
 		Expect(a.SetDetails("1.2.3-faselblah", "", "", nil)).To(Succeed())
-		Expect(pullLimiter.Wait(ctx)).To(Succeed())
 		Expect(a.PullAndWriteCompose(ctx, canaryPlatform, nil)).To(Succeed())
 		Expect(a.Package("/tmp/hellorld.app")).To(Succeed())
 	})
 
 	It("interpolates", func() {
-		GrabLog(slog.LevelInfo)
+		defer grab.Log(GinkgoWriter, slog.LevelInfo)()
 		a := Successful(NewApp("testdata/interpolated-app"))
 		defer a.Done()
 		vars := map[string]string{

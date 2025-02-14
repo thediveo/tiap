@@ -35,9 +35,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 )
 
-// DefaultRegistry points to the Docker registry.
-var DefaultRegistry = name.DefaultRegistry
-
 // SaveImageToFile checks if the referenced image (“imageref”) is either
 // available locally for the specific platform or otherwise attempts to pull it,
 // and then immediately saves it to local storage in the specified directory
@@ -57,8 +54,7 @@ func SaveImageToFile(ctx context.Context,
 ) (filename string, err error) {
 	slog.Debug("pulling and saving image to file...",
 		slog.String("path", imageref))
-	imgRef, err := name.ParseReference(
-		imageref, name.WithDefaultRegistry(DefaultRegistry))
+	imgRef, err := name.ParseReference(imageref)
 	if err != nil {
 		return "", fmt.Errorf("invalid image reference %q: %w",
 			imageref, err)
@@ -181,6 +177,7 @@ func pullRemoteImage(
 	imageref name.Reference,
 	wantPlatform *ociv1.Platform,
 ) (ociv1.Image, error) {
+	slog.Debug("pulling image", slog.String("image", imageref.String()))
 	image, err := remote.Image(imageref,
 		remote.WithContext(ctx),
 		remote.WithPlatform(*wantPlatform),

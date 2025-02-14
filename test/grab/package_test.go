@@ -10,19 +10,16 @@
 // License for the specific language governing permissions and limitations
 // under the License.
 
-package tiap
+package grab
 
 import (
 	"testing"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
-var slowSpec = NodeTimeout(120 * time.Second)
-
-func TestTiap(t *testing.T) {
+func TestGrab(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "tiap package")
+	RunSpecs(t, "tiap/test/grab package")
 }

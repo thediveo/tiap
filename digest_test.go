@@ -19,6 +19,8 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/thediveo/tiap/test/grab"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	. "github.com/thediveo/success"
@@ -27,7 +29,7 @@ import (
 var _ = Describe("digesting digests", Ordered, func() {
 
 	BeforeEach(func() {
-		GrabLog(slog.LevelInfo)
+		DeferCleanup(grab.Log(GinkgoWriter, slog.LevelInfo))
 	})
 
 	It("calculates correct digests of files", func() {
