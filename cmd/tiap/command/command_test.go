@@ -15,6 +15,7 @@ package command
 import (
 	"archive/tar"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -32,6 +33,29 @@ import (
 )
 
 var _ = Describe("tiap command", func() {
+
+	Context("helpers", func() {
+
+		It("panics on structural problem", func() {
+			Expect(func() {
+				_ = successfully(func() (bool, error) { return false, errors.New("D'OH!") }())
+			}).To(Panic())
+		})
+
+		It("logs errors and exits", func() {
+			oldOsExit := osExit
+			defer func() { osExit = oldOsExit }()
+			osExit = func(code int) { panic("D'OH!") }
+
+			var buff strings.Builder
+			defer grab.Log(&buff, slog.LevelInfo)()
+			Expect(func() {
+				_ = unerringly(func() (bool, error) { return false, errors.New("D'OH!!!") }())
+			}).To(PanicWith("D'OH!"))
+			Expect(buff.String()).To(MatchRegexp(`"msg":"fatal","error":"D'OH!!!"`))
+		})
+
+	})
 
 	It("chokes on mis-defined env var", func() {
 		logw := timestamper.New(GinkgoWriter)
