@@ -20,24 +20,20 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
 	"reflect"
 	"time"
 
-	// legacytarball "github.com/google/go-containerregistry/pkg/legacy/tarball"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	ociv1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/daemon"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
-	log "github.com/sirupsen/logrus"
 )
-
-// DefaultRegistry points to the Docker registry.
-var DefaultRegistry = name.DefaultRegistry
 
 // SaveImageToFile checks if the referenced image (“imageref”) is either
 // available locally for the specific platform or otherwise attempts to pull it,
@@ -56,9 +52,9 @@ func SaveImageToFile(ctx context.Context,
 	savedir string,
 	optclient daemon.Client,
 ) (filename string, err error) {
-	log.Debugf("🐛 pulling and saving image %s to file...", imageref)
-	imgRef, err := name.ParseReference(
-		imageref, name.WithDefaultRegistry(DefaultRegistry))
+	slog.Debug("pulling and saving image to file...",
+		slog.String("path", imageref))
+	imgRef, err := name.ParseReference(imageref)
 	if err != nil {
 		return "", fmt.Errorf("invalid image reference %q: %w",
 			imageref, err)
@@ -69,7 +65,7 @@ func SaveImageToFile(ctx context.Context,
 		return "", fmt.Errorf("invalid platform %q: %w",
 			platform, err)
 	}
-	log.Debugf("🐛 wanted platform: %s", wantPlatform)
+	slog.Debug("wanted", slog.String("platform", wantPlatform.String()))
 
 	image, err := hasLocalImage(ctx, optclient, imgRef, wantPlatform)
 	if err != nil {
@@ -96,11 +92,13 @@ func SaveImageToFile(ctx context.Context,
 			imageSavePathName, err)
 	}
 	defer f.Close()
-	log.Debugf("🐛 writing image %s to tar-ball...", imageref)
+	slog.Debug("writing image to tar-ball...",
+		slog.String("image", imageref))
 	start := time.Now()
 	//	if err := legacytarball.Write(imgRef, image, f); err != nil {
 	if err := tarball.Write(imgRef, image, f); err != nil {
-		log.Debugf("❌❌❌ writing image to tar-ball failed")
+		slog.Error("writing image to tar-ball failed",
+			slog.String("error", err.Error()))
 		return "", fmt.Errorf("cannot write image file %q, reason: %w",
 			imageSavePathName, err)
 	}
@@ -110,8 +108,10 @@ func SaveImageToFile(ctx context.Context,
 			imageSavePathName, err)
 	}
 	duration := time.Duration(math.Ceil(time.Since(start).Seconds())) * time.Second
-	log.Infof("   🖭  written %d bytes of 🖼  image with ID %s in %s",
-		totalWritten, filename[:12], duration)
+	slog.Info("written image contents",
+		slog.Int64("amount", totalWritten),
+		slog.String("image-id", filename[:12]),
+		slog.Duration("duration", duration))
 	return
 }
 
@@ -127,19 +127,27 @@ func hasLocalImage(
 	iref name.Reference,
 	wantPlatform *ociv1.Platform,
 ) (ociv1.Image, error) {
+	// nota bene: IsNil() panics if it gets a zero value, such as a plain nil,
+	// or if the kind of value isn't chan, func, map, (unsafe) pointer,
+	// interface, or slice. Usually, we would need to guard IsNil() further than
+	// just shortcutting plain nil; but in this case demon.Client is an
+	// interface, so the type checking at compile time ensures that we get an
+	// interface value and IsNil then won't panic.
 	if client == nil || reflect.ValueOf(client).IsNil() {
-		log.Debugf("🐛 no client, so not checking locally")
+		slog.Debug("no Docker/Moby client, so not checking locally")
 		return nil, nil
 	}
 	// Is the correct image already locally available?
-	log.Debugf("🐛 checking if image %s is locally available...", iref)
+	slog.Debug("checking if image is locally available...",
+		slog.String("image", iref.String()))
 	image, err := daemon.Image(iref,
 		daemon.WithContext(ctx), daemon.WithClient(client))
 	if err != nil {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		log.Debugf("🐛 image %s is not locally available", iref)
+		slog.Debug("image locally unavailable",
+			slog.String("image", iref.String()))
 		return nil, nil // stay silent; no daemon, no such image, no whatever, ...
 	}
 	config, err := image.ConfigFile()
@@ -151,10 +159,12 @@ func hasLocalImage(
 			iref.String(), err)
 	}
 	if hasPf := config.Platform(); hasPf == nil || !hasPf.Satisfies(*wantPlatform) {
-		log.Debugf("🐛 image %s is not locally available (may not satisfy requested platform)", iref)
+		slog.Debug("image locally unavailable (may not satisfy requested platform)",
+			slog.String("image", iref.String()))
 		return nil, nil
 	}
-	log.Debugf("🐛 image %s is locally available", iref)
+	slog.Debug("image is locally available",
+		slog.String("image", iref.String()))
 	return image, nil
 }
 
@@ -167,6 +177,7 @@ func pullRemoteImage(
 	imageref name.Reference,
 	wantPlatform *ociv1.Platform,
 ) (ociv1.Image, error) {
+	slog.Debug("pulling image", slog.String("image", imageref.String()))
 	image, err := remote.Image(imageref,
 		remote.WithContext(ctx),
 		remote.WithPlatform(*wantPlatform),

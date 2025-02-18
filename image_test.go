@@ -15,11 +15,10 @@
 package tiap
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,12 +27,14 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	ociv1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/moby/moby/client"
-	"github.com/sirupsen/logrus"
+	"github.com/thediveo/morbyd"
+	"github.com/thediveo/morbyd/pull"
+	"github.com/thediveo/morbyd/timestamper"
+	"github.com/thediveo/tiap/test/grab"
 	"golang.org/x/sys/unix"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	. "github.com/thediveo/once"
 	. "github.com/thediveo/success"
 )
 
@@ -46,18 +47,11 @@ var _ = Describe("image pulling and saving", Ordered, func() {
 		DeferCleanup(func() { moby.Close() })
 	})
 
-	var tmpDirPath string
+	var tmpBundleDirPath string
 
 	BeforeAll(func() {
-		tmpDirPath = Successful(os.MkdirTemp("", "tiap-test-*"))
-		DeferCleanup(func() { os.RemoveAll(tmpDirPath) })
-
-		canaryImgRef := Successful(name.ParseReference(canaryImageRef))
-		if reg := canaryImgRef.Context().RegistryStr(); reg != "" {
-			oldDefaultRegistry := DefaultRegistry
-			DeferCleanup(func() { DefaultRegistry = oldDefaultRegistry })
-			DefaultRegistry = reg
-		}
+		tmpBundleDirPath = Successful(os.MkdirTemp("", "tiap-test-*"))
+		DeferCleanup(func() { os.RemoveAll(tmpBundleDirPath) })
 	})
 
 	When("things go south", func() {
@@ -65,31 +59,32 @@ var _ = Describe("image pulling and saving", Ordered, func() {
 		It("reports cancelled context", func() {
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
-			Expect(SaveImageToFile(ctx, canaryImageRef, canaryPlatform, tmpDirPath, nil)).Error().
+			Expect(SaveImageToFile(ctx, localCanaryImage, canaryPlatform, tmpBundleDirPath, nil)).Error().
 				To(MatchError(ContainSubstring("context canceled")))
 		})
 
 		It("reports invalid platform", func(ctx context.Context) {
-			Expect(SaveImageToFile(ctx, canaryImageRef, "pl/a/t/t/f/o/r:m", tmpDirPath, nil)).Error().
+			Expect(SaveImageToFile(ctx, localCanaryImage, "pl/a/t/t/f/o/r:m", tmpBundleDirPath, nil)).Error().
 				To(MatchError(ContainSubstring("invalid platform")))
 		})
 
 		It("reports an invalid image reference", func(ctx context.Context) {
-			Expect(SaveImageToFile(ctx, ":", canaryPlatform, tmpDirPath, nil)).Error().
+			Expect(SaveImageToFile(ctx, ":", canaryPlatform, tmpBundleDirPath, nil)).Error().
 				To(MatchError(ContainSubstring("invalid image reference")))
 		})
 
 		It("reports unknown image reference", func(ctx context.Context) {
-			imageref := strings.TrimSuffix(canaryImageRef, ":latest") + ":earliest"
-			Expect(SaveImageToFile(ctx, imageref, canaryPlatform, tmpDirPath, nil)).Error().
+			colon := strings.LastIndex(canaryImage, ":")
+			Expect(colon).To(BeNumerically(">=", 0))
+			imageref := canaryImage[:colon] + ":strangest"
+			Expect(SaveImageToFile(ctx, imageref, canaryPlatform, tmpBundleDirPath, nil)).Error().
 				To(MatchError(Or(
 					ContainSubstring("manifest unknown"),
 					ContainSubstring("MANIFEST_UNKNOWN"))))
 		})
 
 		It("reports when image cannot be saved", func(ctx context.Context) {
-			Expect(pullLimiter.Wait(ctx)).To(Succeed())
-			Expect(SaveImageToFile(ctx, canaryImageRef, canaryPlatform, "/nada-nothing-nil", nil)).Error().
+			Expect(SaveImageToFile(ctx, localCanaryImage, canaryPlatform, "/nada-nothing-nil", nil)).Error().
 				To(MatchError(ContainSubstring("cannot create image file")))
 		})
 
@@ -98,12 +93,12 @@ var _ = Describe("image pulling and saving", Ordered, func() {
 	When("checking with the daemon first for a local image", func() {
 
 		It("reports no error and returns no image if not available locally", func(ctx context.Context) {
-			_, _ = moby.ImageRemove(ctx, canaryImageRef, image.RemoveOptions{
+			_, _ = moby.ImageRemove(ctx, localCanaryImage, image.RemoveOptions{
 				Force:         true, // ensure test coverage
 				PruneChildren: true,
 			})
 			Expect(hasLocalImage(ctx, moby,
-				Successful(name.ParseReference(canaryImageRef)),
+				Successful(name.ParseReference(localCanaryImage)),
 				Successful(ociv1.ParsePlatform(canaryPlatform)))).To(BeNil())
 		})
 
@@ -111,41 +106,31 @@ var _ = Describe("image pulling and saving", Ordered, func() {
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
 			Expect(hasLocalImage(ctx, moby,
-				Successful(name.ParseReference(canaryImageRef)),
+				Successful(name.ParseReference(localCanaryImage)),
 				Successful(ociv1.ParsePlatform(canaryPlatform)))).Error().To(HaveOccurred())
 		})
 
 		It("ignores unsatisfying platform", func(ctx context.Context) {
-			Expect(pullLimiter.Wait(ctx)).To(Succeed())
-			r := Successful(moby.ImagePull(ctx, canaryImageRef, image.PullOptions{
-				Platform: canaryPlatform,
-			}))
-			closeOnce := Once(func() {
-				r.Close()
-			}).Do
-			defer closeOnce()
-			buff := &bytes.Buffer{}
-			Expect(io.Copy(buff, r)).Error().NotTo(HaveOccurred())
-			closeOnce()
+			sess := Successful(morbyd.NewSession(ctx))
+			DeferCleanup(func(ctx context.Context) { sess.Close(ctx) })
+			Expect(sess.PullImage(ctx,
+				localCanaryImage,
+				pull.WithPlatform(canaryPlatform),
+				pull.WithOutput(timestamper.New(GinkgoWriter)))).To(Succeed())
 			Expect(hasLocalImage(ctx, moby,
-				Successful(name.ParseReference(canaryImageRef)),
+				Successful(name.ParseReference(localCanaryImage)),
 				Successful(ociv1.ParsePlatform("frumpf/rust-v")))).To(BeNil())
 		})
 
 		It("returns local image", func(ctx context.Context) {
-			Expect(pullLimiter.Wait(ctx)).To(Succeed())
-			r := Successful(moby.ImagePull(ctx, canaryImageRef, image.PullOptions{
-				Platform: canaryPlatform,
-			}))
-			closeOnce := Once(func() {
-				r.Close()
-			}).Do
-			defer closeOnce()
-			buff := &bytes.Buffer{}
-			Expect(io.Copy(buff, r)).Error().NotTo(HaveOccurred())
-			closeOnce()
+			sess := Successful(morbyd.NewSession(ctx))
+			DeferCleanup(func(ctx context.Context) { sess.Close(ctx) })
+			Expect(sess.PullImage(ctx,
+				localCanaryImage,
+				pull.WithPlatform(canaryPlatform),
+				pull.WithOutput(timestamper.New(GinkgoWriter)))).To(Succeed())
 			img := Successful(hasLocalImage(ctx, moby,
-				Successful(name.ParseReference(canaryImageRef)),
+				Successful(name.ParseReference(localCanaryImage)),
 				Successful(ociv1.ParsePlatform(canaryPlatform))))
 			Expect(img).NotTo(BeNil())
 		})
@@ -153,17 +138,16 @@ var _ = Describe("image pulling and saving", Ordered, func() {
 	})
 
 	It("grabs an image, saves it to a .tar file and names it after the SHA256 of the image ref", slowSpec, func(ctx context.Context) {
-		GrabLog(logrus.DebugLevel)
+		defer grab.Log(GinkgoWriter, slog.LevelDebug)()
 
-		Expect(pullLimiter.Wait(ctx)).To(Succeed())
 		filename, err := SaveImageToFile(ctx,
-			canaryImageRef, canaryPlatform, tmpDirPath, nil /* ensure pull */)
+			localCanaryImage, canaryPlatform, tmpBundleDirPath, nil /* ensure pull */)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(filename).To(MatchRegexp(`^[0-9a-z]{64}\.tar$`))
-		Expect(filepath.Join(tmpDirPath, filename)).To(BeAnExistingFile())
+		Expect(filepath.Join(tmpBundleDirPath, filename)).To(BeAnExistingFile())
 
 		digester := sha256.New()
-		digester.Write([]byte(canaryImageRef))
+		digester.Write([]byte(localCanaryImage))
 		Expect(filename).To(Equal(hex.EncodeToString(digester.Sum(nil)) + ".tar"))
 	})
 
@@ -177,19 +161,34 @@ var _ = Describe("image pulling and saving", Ordered, func() {
 		Expect(unix.Setrlimit(unix.RLIMIT_FSIZE, &unix.Rlimit{
 			Cur: 100, Max: currrl.Max})).To(Succeed())
 
-		Expect(pullLimiter.Wait(ctx)).To(Succeed())
 		Expect(SaveImageToFile(ctx,
-			canaryImageRef, canaryPlatform, tmpDirPath, nil /* ensure pull */)).Error().To(HaveOccurred())
+			canaryImage, canaryPlatform, tmpBundleDirPath, nil /* ensure pull */)).Error().To(HaveOccurred())
 	})
 
-	It("does not crash when looking for a local image given a typed nil client", func(ctx context.Context) {
-		var moby *client.Client // a typed nil
-		Expect(func() {
-			_, _ = hasLocalImage(ctx,
-				moby,
-				Successful(name.ParseReference("x-foobar-x")),
-				nil)
-		}).NotTo(Panic())
+	Context("nil demon client", func() {
+
+		It("does not crash when looking for a local image given a typed nil client", func(ctx context.Context) {
+			var moby *client.Client // a typed nil
+			Expect(func() {
+				_, _ = hasLocalImage(ctx,
+					moby,
+					Successful(name.ParseReference("x-foobar-x")),
+					nil)
+			}).NotTo(Panic())
+		})
+
+		It("does not crash when looking for a local image given a non-nil client", func(ctx context.Context) {
+			moby := Successful(client.NewClientWithOpts(
+				client.WithAPIVersionNegotiation()))
+			Expect(func() {
+				_, _ = hasLocalImage(ctx,
+					moby,
+					Successful(name.ParseReference("x-foobar-x")),
+					nil)
+			}).NotTo(Panic())
+			defer moby.Close()
+		})
+
 	})
 
 })

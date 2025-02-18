@@ -5,6 +5,7 @@
 		}
 	],
 	"settings": {
+		"go.lintTool": "golangci-lint",
 		"go.testTimeout": "120s",
 		"go.testFlags": [
 			"-v",

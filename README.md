@@ -3,7 +3,7 @@
 [![PkgGoDev](https://img.shields.io/badge/-reference-blue?logo=go&logoColor=white&labelColor=505050)](https://pkg.go.dev/github.com/thediveo/tiap)
 [![GitHub](https://img.shields.io/github/license/thediveo/tiap)](https://img.shields.io/github/license/thediveo/tiap)
 ![build and test](https://github.com/thediveo/tiap/actions/workflows/buildandtest.yaml/badge.svg?branch=master)
-![Coverage](https://img.shields.io/badge/Coverage-95.6%25-brightgreen)
+![Coverage](https://img.shields.io/badge/Coverage-91.5%25-brightgreen)
 [![Go Report Card](https://goreportcard.com/badge/github.com/thediveo/tiap)](https://goreportcard.com/report/github.com/thediveo/tiap)
 
 `tiap` is a small Go module and CLI tool to easily create Industrial Edge `.app`
@@ -113,8 +113,10 @@ Usage:
 
 Flags:
       --app-version string     app semantic version, defaults to git describe
+      --debug                  enable debug logging
   -h, --help                   help for tiap
   -H, --host string            Docker daemon socket to connect to (only if non-default and using local images)
+  -i, --interpolate            interpolate env vars in compose project and detail.json
   -o, --out string             mandatory: name of app package file to write
   -p, --platform string        platform to build app for (default "linux/amd64")
       --pull-always            always pull image from remote registry, never use local images
@@ -130,38 +132,47 @@ greeting](https://www.youtube.com/watch?v=_j2L6nkO8MQ&t=1053s), but in text
 only.
 
 ```bash
-# while in the toplevel directory of this repository...
+# while in the toplevel directory of this repository:
 go run github.com/thediveo/tiap/cmd/tiap@latest \
-    -o hellorld.app --pull-always testdata/app/
+    -o hellorld.app --pull-always --interpolate testdata/app/
+# note: --interpolate interpolates env vars in the compose project file.
 ```
 
 outputs
 
 ```text
-INFO[0000] 🗩  tiap ... isn't app publisher              
-INFO[0000]    commit a56f7926 (modified)                
-INFO[0000] ⚖  Apache 2.0 License                        
-INFO[0000] 🏗  creating temporary project copy in "/tmp/tiap-project-1164041835" 
-INFO[0000] 🫙  app repository detected as "hellorld"     
-INFO[0000] 📛  semver: "v0.9.2-1-ga56f792" -> app ID: "t0CVuAlaAjzZLuoSqkI8WrblwEwUoqn1" 
-INFO[0000] 🚚  pulling images and writing composer project... 
-INFO[0000]    🛎  service "hellorld" wants 🖼  image "busybox:stable" 
-INFO[0000]    🖭  written 5101568 bytes of 🖼  image with ID 8135583d97fe 
-INFO[0000] 🌯  wrapping up...                            
-INFO[0000]    🧮  determining package files SHA256 digests... 
-INFO[0000]       🧮  digest(ed) detail.json: 0e684f06b98e4d68df942f410cfee52e7e03929b9ce1fca5e38e381d300e9442 
-INFO[0000]       🧮  digest(ed) hellorld/appicon.png: 77911f21764738f4c4b717f7bd0371cf752128754c7f0c30d181ee5ffd6adb27 
-INFO[0000]       🧮  digest(ed) hellorld/docker-compose.yml: 150cf94801f1132e34d3410358ff93860bf77eab2080c41d33ef8091901bc803 
-INFO[0000]       🧮  digest(ed) hellorld/images/8135583d97feb82398909c9c97607159e6db2c4ca2c885c0b8f590ee0f9fe90d.tar: 12f0bd2e0d70f176bbcd64dc44abbb7f44b77e3abf29a327baf8c9c00a40bd55 
-INFO[0000]       🧮  digest(ed) hellorld/nginx/nginx.json: 0af30ab022bed4328a143fd74eb754c8829adf62b567f1b2d9d825084d10c554 
-INFO[0000]    📦  packaging detail.json                  
-INFO[0000]    📦  packaging digests.json                 
-INFO[0000]    📦  packaging hellorld/appicon.png         
-INFO[0000]    📦  packaging hellorld/docker-compose.yml  
-INFO[0000]    📦  packaging hellorld/images/8135583d97feb82398909c9c97607159e6db2c4ca2c885c0b8f590ee0f9fe90d.tar 
-INFO[0000]    📦  packaging hellorld/nginx/nginx.json    
-INFO[0000] ✅  ...IE app package "hellorld.app" successfully created 
-INFO[0000] 🧹  removed temporary folder "/tmp/tiap-project-1164041835" 
+2025-13-42T26:92:88Z INF tiap ... isn't app publisher version=(devel) license="Apache 2.0"
+2025-13-42T26:92:88Z INF creating temporary project copy path=/tmp/tiap-project-2262943179
+2025-13-42T26:92:88Z INF app repository detected repo=hellorld
+2025-13-42T26:92:88Z INF normalized platform platform=linux/amd64
+2025-13-42T26:92:88Z INF denormalized IE App architecture arch=x86-64
+2025-13-42T26:92:88Z INF updated version ID based on semver semver=0.13.1-5-g7ab7cd8 versionId=Bor6mbv1fchBFRPTgFedPoFpjzuXgmK0
+2025-13-42T26:92:88Z INF pulling images...
+2025-13-42T26:92:88Z INF want image service=hellorld image=busybox:stable
+2025-02-18T12:17:15Z INF written image contents amount=2156544 image-id=c107da89b447 duration=1s
+2025-02-18T12:17:15Z INF images successfully pulled
+2025-02-18T12:17:15Z INF writing final compose project...
+2025-02-18T12:17:15Z INF final compose project written
+2025-02-18T12:17:15Z INF wrapping up...
+2025-02-18T12:17:15Z INF determining package files SHA256 digests...
+2025-02-18T12:17:15Z INF digest(ed) path=detail.json digest=00d31aa9510fbf481b5d556c3b2ee0b08821f5948fbe48203ae703b800f4ac55
+2025-02-18T12:17:15Z INF digest(ed) path=hellorld/appicon.png digest=77911f21764738f4c4b717f7bd0371cf752128754c7f0c30d181ee5ffd6adb27
+2025-02-18T12:17:15Z INF digest(ed) path=hellorld/docker-compose.yml digest=4dde434ebf1a6450e74a63f4035974c4ce725abd9830142205913222a8725635
+2025-02-18T12:17:15Z INF digest(ed) path=hellorld/images/c107da89b4470c4ed8fcaa56395fd11a0b85c57e1b6217e749655dfde1a9a91b.tar digest=558fc1edbf893ffb9abf1119dc0e4d236bdb6f165ff3d55f886aad66f82e0ea3
+2025-02-18T12:17:15Z INF digest(ed) path=hellorld/nginx/nginx.json digest=d817b3a87c15f5c4807deb6e6ebf9e8aa2be5735c944f8b97a00124035c67cd5
+2025-02-18T12:17:15Z INF creating IE app tar-ball doctor=Tarr professor=Fether
+2025-02-18T12:17:15Z INF packaging path=detail.json
+2025-02-18T12:17:15Z INF packaging path=digests.json
+2025-02-18T12:17:15Z INF packaging path=hellorld
+2025-02-18T12:17:15Z INF packaging path=hellorld/appicon.png
+2025-02-18T12:17:15Z INF packaging path=hellorld/docker-compose.yml
+2025-02-18T12:17:15Z INF packaging path=hellorld/images
+2025-02-18T12:17:15Z INF packaging path=hellorld/images/c107da89b4470c4ed8fcaa56395fd11a0b85c57e1b6217e749655dfde1a9a91b.tar
+2025-02-18T12:17:15Z INF packaging path=hellorld/nginx
+2025-02-18T12:17:15Z INF packaging path=hellorld/nginx/nginx.json
+2025-02-18T12:17:15Z INF IE app package successfully created
+2025-02-18T12:17:15Z INF IE app package path=/tmp/hellorld.app duration=1s
+2025-02-18T12:17:15Z INF removed temporary folder path=/tmp/tiap-project-2262943179
 ```
 
 ## App Template

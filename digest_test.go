@@ -16,18 +16,20 @@ package tiap
 
 import (
 	"bytes"
+	"log/slog"
 	"os"
+
+	"github.com/thediveo/tiap/test/grab"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/sirupsen/logrus"
 	. "github.com/thediveo/success"
 )
 
 var _ = Describe("digesting digests", Ordered, func() {
 
 	BeforeEach(func() {
-		GrabLog(logrus.InfoLevel)
+		DeferCleanup(grab.Log(GinkgoWriter, slog.LevelInfo))
 	})
 
 	It("calculates correct digests of files", func() {

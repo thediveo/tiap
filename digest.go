@@ -21,9 +21,8 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
-
-	log "github.com/sirupsen/logrus"
 )
 
 // FileDigests calculates the SHA256 digests of files inside the “root”
@@ -36,7 +35,7 @@ func FileDigests(root string) (map[string]string, error) {
 	return fileDigests(os.DirFS(root))
 }
 func fileDigests(rootfs fs.FS) (map[string]string, error) {
-	log.Info("   🧮  determining package files SHA256 digests...")
+	slog.Info("determining package files SHA256 digests...")
 	digests := map[string]string{}
 
 	err := fs.WalkDir(rootfs, ".", func(path string, dirEntry fs.DirEntry, err error) error {
@@ -58,7 +57,9 @@ func fileDigests(rootfs fs.FS) (map[string]string, error) {
 		}
 		digest := hex.EncodeToString(digester.Sum(nil))
 		digests[path] = digest
-		log.Info(fmt.Sprintf("      🧮  digest(ed) %s: %s", path, digest))
+		slog.Info("digest(ed)",
+			slog.String("path", path),
+			slog.String("digest", digest))
 		return nil
 	})
 	if err != nil {

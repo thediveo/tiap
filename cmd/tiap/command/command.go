@@ -12,11 +12,13 @@
 // License for the specific language governing permissions and limitations
 // under the License.
 
-package main
+package command
 
 import (
 	"context"
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,12 +26,14 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/containerd/platforms"
+	"github.com/lmittmann/tint"
 	"github.com/moby/moby/client"
 	ispecsv1 "github.com/opencontainers/image-spec/specs-go/v1"
-	log "github.com/sirupsen/logrus"
+
 	"github.com/spf13/cobra"
 	"github.com/thediveo/tiap"
 	"golang.org/x/exp/slices"
@@ -48,6 +52,9 @@ const (
 	debugFlagName         = "debug"
 )
 
+// test support
+var osExit = os.Exit
+
 // successfully expects the returned value-error pair to be without error;
 // otherwise, it panics with the passed error. Use this helper in those
 // situations where there is a code problem that the user cannot fix (except by
@@ -63,7 +70,8 @@ func successfully[R any](r R, err error) R {
 // otherwise, it logs an error and exits with code 1.
 func unerringly[R any](r R, err error) R {
 	if err != nil {
-		log.Fatal(err.Error())
+		slog.Error("fatal", slog.String("error", err.Error()))
+		osExit(1)
 	}
 	return r
 }
@@ -106,128 +114,33 @@ func buildInfo(info *debug.BuildInfo, key string) string {
 	return info.Settings[idx].Value
 }
 
-func newRootCmd() (rootCmd *cobra.Command) {
+// New returns a new tiap root command, ready for use with its CLI flags already
+// registered.
+func New(logw io.Writer) (rootCmd *cobra.Command) {
 	rootCmd = &cobra.Command{
 		Use:     "tiap -o FILE [flags] APP-TEMPLATE-DIR",
 		Short:   "tiap isn't app publisher, but packages Industrial Edge .app files anyway",
 		Version: `":latest"`, // sorry :p
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			log.Info("🗩  tiap ... isn't app publisher")
-			log.Info(fmt.Sprintf("   %s", rootCmd.Version))
-			log.Info("⚖  Apache 2.0 License")
-
-			if successfully(rootCmd.Flags().GetBool(debugFlagName)) {
-				log.SetLevel(log.DebugLevel)
-			}
-			log.Debug("🐛 debug logging enabled")
-
-			appSemver := successfully(rootCmd.Flags().GetString(appVersionFlagName))
-			if appSemver == "" {
-				log.Debug("🐛 determining semvar using git")
-				out, err := exec.Command("git", "describe").CombinedOutput()
-				if err != nil {
-					log.Errorf("git describe: %s", out)
-					return fmt.Errorf("git describe failed: %s", out)
-				}
-				appSemver = strings.Trim(string(out), "\r\n")
-			}
-			appSemver = strings.TrimPrefix(appSemver, "v")
-			if _, err := semver.StrictNewVersion(appSemver); err != nil {
-				return fmt.Errorf("invalid app semver %q, reason: %w",
-					appSemver, err)
-			}
-			log.Debugf("🐛 using semver %s", appSemver)
-
-			rn := strings.Replace(
-				successfully(rootCmd.Flags().GetString(releaseNotesFlagName)),
-				"\n", "\\n", -1)
-			releaseNotes, err := strconv.Unquote(`"` + rn + `"`)
-			if err != nil {
-				log.Fatalf("release notes %q: %s", successfully(rootCmd.Flags().GetString(releaseNotesFlagName)), err.Error())
-			}
-
-			app, err := tiap.NewApp(args[0])
-			if err != nil {
-				return err
-			}
-			defer app.Done()
-
-			var vars map[string]string // nil means no interpolation at all
-			if successfully(rootCmd.Flags().GetBool(interpolationFlagName)) {
-				vars = envVars()
-			}
-			if vars != nil {
-				if err := app.Interpolate(vars); err != nil {
-					log.Fatalf("interpolating compose project variables: %s",
-						err.Error())
-				}
-			}
-
-			platform := unerringly(
-				platforms.Parse(successfully(rootCmd.Flags().GetString(platformFlagName))))
-			if platform.OS != "linux" && platform.OS != runtime.GOOS {
-				// warn when the platform OS was (explicitly) set to something
-				// different than linux; we try to not warn in case tiap is run
-				// on a different OS and the platform has been specified only
-				// regarding its architecture, but not OS and the unwanted
-				// default OS has kicked in.
-				log.Warnf("enforcing \"linux\" platform OS")
-			}
-			platform.OS = "linux" // Industrial Edge supports only Linux.
-			log.Infof("🚊  normalized platform: %q", platforms.Format(platform))
-
-			appArch := denormalize(platform).Architecture
-			log.Infof("🚊  denormalized IE App architecture: %q", appArch)
-
-			err = app.SetDetails(appSemver, releaseNotes, appArch, envVars())
-			if err != nil {
-				return err
-			}
-
-			pullAlways := successfully(rootCmd.Flags().GetBool(pullAlwaysFlagName))
-			var moby *client.Client
-			if !pullAlways {
-				log.Debugf("🐛 creating Docker/Moby client")
-				dockerHost := successfully(rootCmd.Flags().GetString(dockerHostFlagName))
-				opts := []client.Opt{
-					client.WithAPIVersionNegotiation(),
-				}
-				if dockerHost != "" {
-					opts = append(opts, client.WithHost(dockerHost))
-				} else {
-					opts = append(opts, client.WithHostFromEnv())
-				}
-				moby, err = client.NewClientWithOpts(opts...)
-				if err != nil {
-					return fmt.Errorf("cannot contact Docker daemon, reason: %w", err)
-				}
-				defer moby.Close()
-				log.Debugf("🐛 Docker/Moby client created")
-			}
-
-			err = app.PullAndWriteCompose(
-				context.Background(),
-				platforms.Format(platform),
-				moby)
-			if err != nil {
-				return err
-			}
-
-			outname := successfully(rootCmd.Flags().GetString(outnameFlagName))
-			if filepath.Ext(outname) == "" {
-				outname = outname + ".app"
-			}
-			return app.Package(outname)
+			return Run(cmd, args, logw)
 		},
 	}
+	if err := RegisterFlags(rootCmd); err != nil {
+		panic(err)
+	}
+	return rootCmd
+}
 
-	flags := rootCmd.Flags()
+// Register the CLI flags for the tiap (sub)command, returning nil. In case of
+// failure, Register returns a non-nil error instead.
+func RegisterFlags(cmd *cobra.Command) error {
+	flags := cmd.Flags()
 
 	flags.StringP(outnameFlagName, "o", "",
 		"mandatory: name of app package file to write")
-	if err := rootCmd.MarkFlagRequired(outnameFlagName); err != nil {
-		panic(err)
+	if err := cmd.MarkFlagRequired(outnameFlagName); err != nil {
+		return err
 	}
 
 	flags.String(appVersionFlagName, "",
@@ -246,7 +159,7 @@ func newRootCmd() (rootCmd *cobra.Command) {
 	flags.StringP(dockerHostFlagName, "H", "",
 		"Docker daemon socket to connect to (only if non-default and using local images)")
 
-	rootCmd.MarkFlagsMutuallyExclusive(pullAlwaysFlagName, dockerHostFlagName)
+	cmd.MarkFlagsMutuallyExclusive(pullAlwaysFlagName, dockerHostFlagName)
 
 	flags.BoolP(interpolationFlagName, "i", false,
 		"interpolate env vars in compose project and detail.json")
@@ -261,13 +174,137 @@ func newRootCmd() (rootCmd *cobra.Command) {
 			if buildInfo(info, "vcs.modified") == "true" {
 				modified = " (modified)"
 			}
-			rootCmd.Version = fmt.Sprintf("commit %s%s", commit[:8], modified)
+			cmd.Version = fmt.Sprintf("commit %s%s", commit[:8], modified)
 		} else if modver := info.Main.Version; modver != "" {
-			rootCmd.Version = modver
+			cmd.Version = modver
 		}
 	}
 
-	return rootCmd
+	return nil
+}
+
+// Run the tiap (sub)command with the supplied arguments, doing the work and
+// returning nil. If the command fails, it returns a non-nil error instead.
+func Run(cmd *cobra.Command, args []string, logw io.Writer) error {
+	slogOpts := slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}
+	if successfully(cmd.Flags().GetBool(debugFlagName)) {
+		slogOpts.Level = slog.LevelDebug
+	}
+	slog.SetDefault(slog.New(
+		tint.NewHandler(logw, &tint.Options{
+			Level:      slogOpts.Level,
+			TimeFormat: time.RFC3339,
+		}),
+	))
+	slog.Info("tiap ... isn't app publisher",
+		slog.String("version", cmd.Version),
+		slog.String("license", "Apache 2.0"))
+	slog.Debug("debug logging enabled")
+
+	appSemver := successfully(cmd.Flags().GetString(appVersionFlagName))
+	if appSemver == "" {
+		slog.Debug("determining semvar using git")
+		out, err := exec.Command("git", "describe").CombinedOutput()
+		if err != nil {
+			slog.Error("git describe failed", slog.String("output", string(out)))
+			return fmt.Errorf("git describe failed: %s", out)
+		}
+		appSemver = strings.Trim(string(out), "\r\n")
+	}
+	appSemver = strings.TrimPrefix(appSemver, "v")
+	if _, err := semver.StrictNewVersion(appSemver); err != nil {
+		return fmt.Errorf("invalid app semver %q, reason: %w",
+			appSemver, err)
+	}
+	slog.Debug("app project", slog.String("semver", appSemver))
+
+	releaseNotes := successfully(cmd.Flags().GetString(releaseNotesFlagName))
+	rn := strings.Replace(releaseNotes, "\n", "\\n", -1)
+	releaseNotes, err := strconv.Unquote(`"` + rn + `"`)
+	if err != nil {
+		slog.Error("release notes",
+			slog.String("contents", releaseNotes),
+			slog.String("error", err.Error()))
+		osExit(1)
+	}
+
+	app, err := tiap.NewApp(args[0])
+	if err != nil {
+		return err
+	}
+	defer app.Done()
+
+	var vars map[string]string // nil means no interpolation at all
+	if successfully(cmd.Flags().GetBool(interpolationFlagName)) {
+		vars = envVars()
+	}
+	if vars != nil {
+		if err := app.Interpolate(vars); err != nil {
+			slog.Error("interpolating compose project variables",
+				slog.String("error", err.Error()))
+			osExit(1)
+		}
+	}
+
+	platform := unerringly(
+		platforms.Parse(successfully(cmd.Flags().GetString(platformFlagName))))
+	if platform.OS != "linux" && platform.OS != runtime.GOOS {
+		// warn when the platform OS was (explicitly) set to something
+		// different than linux; we try to not warn in case tiap is run
+		// on a different OS and the platform has been specified only
+		// regarding its architecture, but not OS and the unwanted
+		// default OS has kicked in.
+		slog.Warn("enforcing \"linux\" platform OS")
+	}
+	platform.OS = "linux" // Industrial Edge supports only Linux.
+	slog.Info("normalized platform",
+		slog.String("platform", platforms.Format(platform)))
+
+	appArch := denormalize(platform).Architecture
+	slog.Info("denormalized IE App architecture",
+		slog.String("arch", appArch))
+
+	err = app.SetDetails(appSemver, releaseNotes, appArch, envVars())
+	if err != nil {
+		return err
+	}
+
+	pullAlways := successfully(cmd.Flags().GetBool(pullAlwaysFlagName))
+	var moby *client.Client
+	if !pullAlways {
+		slog.Debug("creating Docker/Moby client")
+		dockerHost := successfully(cmd.Flags().GetString(dockerHostFlagName))
+		opts := []client.Opt{
+			client.WithAPIVersionNegotiation(),
+		}
+		if dockerHost != "" {
+			opts = append(opts, client.WithHost(dockerHost))
+		} else {
+			opts = append(opts, client.WithHostFromEnv())
+		}
+		moby, err = client.NewClientWithOpts(opts...)
+		if err != nil {
+			return fmt.Errorf("cannot contact Docker daemon, reason: %w", err)
+		}
+		defer moby.Close()
+		slog.Debug("Docker/Moby client created")
+	}
+
+	err = app.PullAndWriteCompose(
+		context.Background(),
+		platforms.Format(platform),
+		moby)
+	if err != nil {
+		return err
+	}
+
+	outname := successfully(cmd.Flags().GetString(outnameFlagName))
+	if filepath.Ext(outname) == "" {
+		outname = outname + ".app"
+	}
+	return app.Package(outname)
 }
 
 // envVars returns a map of key-value environment variables.

@@ -17,25 +17,31 @@ package tiap
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"os"
 
-	"github.com/sirupsen/logrus"
+	"github.com/thediveo/tiap/test/grab"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	. "github.com/thediveo/success"
 )
 
+var composerVars = map[string]string{
+	"LOCAL_REGISTRY": localRegistry,
+}
+
 var _ = Describe("IE app composer projects", Ordered, func() {
 
 	It("determines service images", func() {
-		GrabLog(logrus.InfoLevel)
+		defer grab.Log(GinkgoWriter, slog.LevelDebug)()
 		p := Successful(NewComposerProject("testdata/composer/hellorld/docker-compose.yml"))
+		Expect(p.Interpolate(composerVars)).To(Succeed())
 		imgs := Successful(p.Images())
 		Expect(imgs).To(And(
-			HaveKeyWithValue("bar", "alpine:edge"),
-			HaveKeyWithValue("baz", "alpine:edge"),
-			HaveKeyWithValue("foo", "busybox:stable"),
+			HaveKeyWithValue("bar", HaveSuffix("/alpine:edge")),
+			HaveKeyWithValue("baz", HaveSuffix("/alpine:edge")),
+			HaveKeyWithValue("foo", HaveSuffix("/busybox:stable")),
 		))
 	})
 
@@ -47,25 +53,23 @@ var _ = Describe("IE app composer projects", Ordered, func() {
 	})
 
 	It("rejects latest image references in projects", func() {
-		GrabLog(logrus.InfoLevel)
+		defer grab.Log(GinkgoWriter, slog.LevelDebug)()
 		p := Successful(LoadComposerProject("testdata/composer/latest"))
 		Expect(p.Images()).Error().To(MatchError(MatchRegexp(`service .* attempts to use latest`)))
 	})
 
 	It("loads project, pulls images, writes back", slowSpec, func(ctx context.Context) {
-		GrabLog(logrus.InfoLevel)
+		defer grab.Log(GinkgoWriter, slog.LevelDebug)()
 
 		By("setting up an empty transient testing directory")
 		tmpDirPath := Successful(os.MkdirTemp("", "tiap-test-*"))
 		defer os.RemoveAll(tmpDirPath)
 
-		GrabLog(logrus.InfoLevel)
-
 		By("loading a composer project")
 		p := Successful(NewComposerProject("testdata/composer/hellorld/docker-compose.yml"))
+		Expect(p.Interpolate(composerVars)).To(Succeed())
 
 		By("determining and pulling referenced images")
-		Expect(pullLimiter.Wait(ctx)).To(Succeed())
 		imgs := Successful(p.Images())
 		Expect(p.PullImages(ctx, imgs, canaryPlatform, tmpDirPath, nil)).To(Succeed())
 		Expect(imgs["bar"]).To(Equal(imgs["baz"]))
@@ -109,7 +113,7 @@ var _ = Describe("IE app composer projects", Ordered, func() {
 		})
 
 		It("reports invalid services in project", func() {
-			GrabLog(logrus.InfoLevel)
+			defer grab.Log(GinkgoWriter, slog.LevelInfo)()
 			p := &ComposerProject{yaml: map[string]any{
 				"services": map[string]any{
 					"foo": 42,
@@ -135,7 +139,7 @@ var _ = Describe("IE app composer projects", Ordered, func() {
 		})
 
 		It("reports missing or incorrect service memory limit", func() {
-			GrabLog(logrus.InfoLevel)
+			defer grab.Log(GinkgoWriter, slog.LevelInfo)()
 			p := &ComposerProject{yaml: map[string]any{
 				"services": map[string]any{
 					"foo": map[string]any{

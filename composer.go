@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"math"
 	"os"
@@ -28,7 +29,6 @@ import (
 	"github.com/distribution/reference"
 	"github.com/docker/go-units"
 	"github.com/google/go-containerregistry/pkg/v1/daemon"
-	log "github.com/sirupsen/logrus"
 	"github.com/thediveo/tiap/interpolate"
 	"gopkg.in/yaml.v3"
 )
@@ -108,7 +108,9 @@ func (p *ComposerProject) Images() (ServiceImages, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid image element in service %q, reason: %w", serviceName, err)
 		}
-		log.Info(fmt.Sprintf("   🛎  service %q wants 🖼  image %q", serviceName, imageRef))
+		slog.Info("want image",
+			slog.String("service", serviceName),
+			slog.String("image", imageRef))
 		ir, err := reference.Parse(imageRef)
 		if err != nil {
 			return nil, fmt.Errorf("service %q with invalid image reference %q, reason: %w",
@@ -151,7 +153,8 @@ func (p *ComposerProject) PullImages(
 	for _, imageRef := range serviceimgs {
 		uniqueImageRefs[imageRef] = nada{}
 	}
-	log.Debugf("🐛 fetching and tar-ball'ing %d images...", len(uniqueImageRefs))
+	slog.Debug("fetching and tar-ball'ing images...",
+		slog.Int("image-count", len(uniqueImageRefs)))
 	// Prepare the images subdirectory where we will place the downloaded
 	// container images and then pull ... pull ... PULL!
 	imagesDir := filepath.Join(root, "images")
@@ -167,14 +170,15 @@ func (p *ComposerProject) PullImages(
 		}
 	}
 	duration := time.Duration(math.Ceil(time.Since(start).Seconds())) * time.Second
-	log.Debugf("🐛 all images fetched and saved in %s", duration)
+	slog.Debug("all images fetched and saved",
+		slog.Duration("duration", duration))
 	return nil
 }
 
 // Save writes the loaded composer project to the specified io.Writer, returning
 // an error in case of failure.
 func (p *ComposerProject) Save(w io.Writer) error {
-	log.Debugf("🐛 saving composer project...")
+	slog.Debug("saving composer project...")
 	b, err := yaml.Marshal(p.yaml)
 	if err != nil {
 		return fmt.Errorf("cannot write composer project, reason: %w", err)
