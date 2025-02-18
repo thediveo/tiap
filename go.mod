@@ -16,11 +16,10 @@ require (
 	github.com/opencontainers/image-spec v1.1.0
 	github.com/otiai10/copy v1.14.1
 	github.com/spf13/cobra v1.8.1
-	github.com/thediveo/once v0.9.2
+	github.com/thediveo/gtar v0.5.0
 	github.com/thediveo/success v1.0.3
 	golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac
 	golang.org/x/sys v0.30.0
-	golang.org/x/time v0.10.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -31,7 +30,7 @@ require (
 	github.com/moby/sys/userns v0.1.0 // indirect
 	github.com/moby/term v0.5.0 // indirect
 	github.com/morikuni/aec v1.0.0 // indirect
-	github.com/thediveo/gtar v0.5.0 // indirect
+	golang.org/x/time v0.10.0 // indirect
 )
 
 require (
