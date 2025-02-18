@@ -13,22 +13,23 @@
 package command
 
 import (
-	"archive/tar"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
 	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/thediveo/gtar"
 	"github.com/thediveo/morbyd/timestamper"
 	"github.com/thediveo/tiap/test/grab"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/types"
 	. "github.com/thediveo/success"
 )
 
@@ -80,13 +81,13 @@ var _ = Describe("tiap command", func() {
 	})
 
 	It("packages hellorld", slowSpec, func(ctx context.Context) {
-		const appbundle = "/tmp/hellorld.test.app"
+		const appbundlePath = "/tmp/hellorld.test.app"
 
 		var buff strings.Builder
 		logw := io.MultiWriter(&buff, GinkgoWriter)
 		defer grab.Log(logw, slog.LevelDebug)()
 
-		_ = os.Remove(appbundle)
+		_ = os.Remove(appbundlePath)
 
 		var rootCmd *cobra.Command
 		Expect(func() {
@@ -94,7 +95,7 @@ var _ = Describe("tiap command", func() {
 		}).NotTo(Panic())
 		rootCmd.SilenceErrors = true
 		rootCmd.SetArgs([]string{
-			"--out", appbundle,
+			"--out", appbundlePath,
 			"--app-version", "v0.0.666",
 			"--interpolate",
 			"--debug",
@@ -102,32 +103,6 @@ var _ = Describe("tiap command", func() {
 		})
 		os.Setenv("REGISTRY", fmt.Sprintf("127.0.0.1:%d/", registryPort)) // non-existing registry
 		Expect(rootCmd.Execute()).To(Succeed())
-
-		Expect(appbundle).To(BeARegularFile())
-		appf := Successful(os.Open(appbundle))
-		defer appf.Close()
-		apptar := tar.NewReader(appf)
-		names := []string{}
-		for {
-			header, err := apptar.Next()
-			if err == io.EOF {
-				break
-			}
-			Expect(err).NotTo(HaveOccurred())
-			finfo := header.FileInfo()
-			if finfo.IsDir() {
-				continue
-			}
-			Expect(finfo.Mode()&^fs.ModePerm).To(Equal(fs.FileMode(0)), "not a plain file")
-			Expect(finfo.Size()).NotTo(BeZero())
-			names = append(names, header.Name)
-		}
-
-		Expect(names).To(ContainElements(
-			"detail.json",
-			"digests.json",
-			"hellorld/appicon.png",
-			"hellorld/nginx/nginx.json"))
 
 		logs := buff.String()
 		// as we're using tint as our slog handler, we need to keep in mind that
@@ -137,6 +112,51 @@ var _ = Describe("tiap command", func() {
 .*image locally unavailable .*image=.*/busybox:stable
 .*pulling image .*image=.*/busybox:stable
 `))
+
+		Expect(appbundlePath).To(BeARegularFile())
+		apptarIndex := Successful(gtar.New(appbundlePath))
+		defer apptarIndex.Close()
+
+		Expect(apptarIndex.AllRegularFilePaths()).To(ContainElements(
+			"detail.json",
+			"digests.json",
+			"hellorld/appicon.png",
+			"hellorld/docker-compose.yml",
+			"hellorld/nginx/nginx.json"))
+
+		var imagePaths []string
+		Expect(apptarIndex.AllRegularFilePaths()).To(ContainElement(MatchRegexp(`^hellorld/images/.*\.tar$`), &imagePaths))
+		Expect(imagePaths).To(HaveLen(1))
+
+		digestsf := Successful(apptarIndex.Open("digests.json"))
+		defer digestsf.Close()
+
+		var digests struct {
+			Files map[string]string `json:"files"`
+		}
+		Expect(json.NewDecoder(digestsf).Decode(&digests)).To(Succeed())
+		Expect(digests.Files).NotTo(BeEmpty())
+
+		Expect(imagePaths).To(HaveEach(BeKeyOf(digests.Files)))
+
+		imageDigestMap := FilterKeys(digests.Files, MatchRegexp(`^hellorld/images/.*\.tar$`))
+		Expect(imageDigestMap).To(HaveLen(1))
+		Expect(imageDigestMap).To(HaveEach(Not(BeZero())))
 	})
 
 })
+
+func FilterKeys[M ~map[K]V, K comparable, V any](m M, matcher types.GomegaMatcher) M {
+	result := M{}
+	for k, v := range m {
+		match, err := matcher.Match(k)
+		if err != nil {
+			Fail(err.Error())
+		}
+		if !match {
+			continue
+		}
+		result[k] = v
+	}
+	return result
+}

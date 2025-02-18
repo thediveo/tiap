@@ -1,8 +1,6 @@
 module github.com/thediveo/tiap
 
-go 1.23.0
-
-toolchain go1.23.5
+go 1.23.5
 
 require (
 	github.com/Masterminds/semver/v3 v3.3.1
@@ -33,6 +31,7 @@ require (
 	github.com/moby/sys/userns v0.1.0 // indirect
 	github.com/moby/term v0.5.0 // indirect
 	github.com/morikuni/aec v1.0.0 // indirect
+	github.com/thediveo/gtar v0.5.0 // indirect
 )
 
 require (
