@@ -11,6 +11,8 @@
 			"-v",
 			"--ginkgo.no-color"
 		],
+		"statsBar.memoUsage.format": "$(chip) ${used}/${total} ${unit}, ${percent}%",
+		"statsBar.location": "Right",
 	},
 	"launch": {
 		"version": "0.2.0",
@@ -37,5 +39,11 @@
 			}
 		],
 		"compounds": []
+	},
+	"extensions": {
+		"recommendations": [
+			"ms-vscode.live-server",
+			"njzy.stats-bar"
+		]
 	}
 }
