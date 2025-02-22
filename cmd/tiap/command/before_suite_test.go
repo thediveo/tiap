@@ -15,7 +15,7 @@ package command
 import (
 	"context"
 	"fmt"
-	"strings"
+	"net/http"
 	"time"
 
 	"github.com/moby/moby/client"
@@ -65,7 +65,23 @@ var _ = BeforeSuite(func(ctx context.Context) {
 		run.WithPublishedPort(fmt.Sprintf("127.0.0.1:%d:5000", registryPort)),
 		run.WithAutoRemove()))
 
-	// normal PullImage will always first check instead of skipping
+	By("waiting for the local container registry to become ready")
+	Eventually(ctx, func(ctx context.Context) error {
+		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		req := Successful(http.NewRequestWithContext(ctx,
+			"GET",
+			fmt.Sprintf("http://127.0.0.1:%d/v2/", registryPort),
+			nil))
+		resp, err := http.DefaultClient.Do(req)
+		if resp != nil {
+			resp.Body.Close()
+		}
+		return err
+	}).Within(5 * time.Second).ProbeEvery(500 * time.Millisecond).
+		Should(Succeed())
+
+		// normal PullImage will always first check instead of skipping
 	// immediately, so we need to check explicitly before pulling.
 	if !Successful(sess.HasImage(ctx, bbStableImage)) {
 		Byf("pulling the canary image %q for architecture %q from upstream", bbStableImage, canaryPlatform)
@@ -81,22 +97,9 @@ var _ = BeforeSuite(func(ctx context.Context) {
 	Expect(sess.TagImage(ctx, bbStableImage, localRegistryBBStableImage)).To(Succeed())
 
 	By("pushing the canary image into the local registry")
-	// We're potentially in a race condition with the local registry still
-	// starting up when rerunning tests so that the canary images are already
-	// pulled. So if our push request gets rejected with an EOF while gobbling
-	// the service outcome, we shortly wait and then try again for a limited
-	// overall time until we succeed or throw in the towel. However, we stop
-	// dead at the first non-nil, non-EOF error.
-	Eventually(func() error {
-		err := sess.PushImage(ctx, localRegistryBBStableImage,
-			push.WithRegistryAuth(magic),
-			push.WithOutput(timestamper.New(GinkgoWriter)))
-		if err != nil && (!strings.Contains(err.Error(), "EOF") &&
-			!strings.Contains(err.Error(), "connection reset by peer")) {
-			return StopTrying("local registry fail: " + err.Error())
-		}
-		return err
-	}).Within(5 * time.Second).ProbeEvery(500 * time.Millisecond).Should(Succeed())
+	Expect(sess.PushImage(ctx, localRegistryBBStableImage,
+		push.WithRegistryAuth(magic),
+		push.WithOutput(timestamper.New(GinkgoWriter)))).To(Succeed())
 	Expect(sess.RemoveImage(ctx, localRegistryBBStableImage)).Error().NotTo(HaveOccurred())
 })
 

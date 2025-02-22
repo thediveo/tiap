@@ -15,6 +15,7 @@ package tiap
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -71,20 +72,27 @@ var _ = BeforeSuite(func(ctx context.Context) {
 		sess.Close(ctx)
 	})
 
-	/*
-		DeferCleanup(func() {
-			cmd := exec.Command("df", "-h")
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			Expect(cmd.Run()).To(Succeed())
-		})
-	*/
-
 	By("starting a local container registry")
 	_ = Successful(sess.Run(ctx, "registry:2",
 		run.WithName("local-registry"),
 		run.WithPublishedPort(fmt.Sprintf("127.0.0.1:%d:5000", registryPort)),
 		run.WithAutoRemove()))
+
+	By("waiting for the local container registry to become ready")
+	Eventually(ctx, func(ctx context.Context) error {
+		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		req := Successful(http.NewRequestWithContext(ctx,
+			"GET",
+			fmt.Sprintf("http://127.0.0.1:%d/v2/", registryPort),
+			nil))
+		resp, err := http.DefaultClient.Do(req)
+		if resp != nil {
+			resp.Body.Close()
+		}
+		return err
+	}).Within(5 * time.Second).ProbeEvery(500 * time.Millisecond).
+		Should(Succeed())
 
 	// normal PullImage will always first check instead of skipping
 	// immediately, so we need to check explicitly before pulling.
