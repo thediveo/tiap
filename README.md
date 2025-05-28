@@ -74,12 +74,12 @@ still does the following safety checks:
 is no support for `.env` files so far (PR welcome).
 
 Please note in case of `details.json`:
-- `versionNumber` is always set via the `--version` CLI flag. If the value to
-  `--version` is empty (`""`), `tiap` runs [`git
+- `versionNumber` is always set via the `--app-version` CLI flag. If the value to
+  `--app-version` is empty (`""`), `tiap` runs [`git
   describe`](https://git-scm.com/docs/git-describe) on the current repository to
   find the most recent tag that is reachable from HEAD.
-- `versionID` is automatically determined from he SHA256 hash of `--version` and
-  the repository name.
+- `versionID` is automatically determined from he SHA256 hash of `--app-version`
+  and the repository name.
 - `releaseNotes` can be set using `--release-notes` and in this case no further
   interpolation occurs on the release notes; instead, the caller needs to
   interpolate any environment variables before executing `tiap`. But if
