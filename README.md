@@ -12,6 +12,9 @@ required container images based on your app's composer project and finally
 bundling all up in an `.app` package. The `.app` file then can be imported by
 users into their IEM systems.
 
+> [!NOTE] Currently, only the most recent stable Go version _N_ is supported,
+> but not necessary _N_-1.
+
 ## Features
 
 - simple to automatically download and use within your pipeline:
@@ -238,4 +241,5 @@ contains:
 
 ## Copyright and License
 
-Copyright 2023 Harald Albrecht, licensed under the Apache License, Version 2.0.
+Copyright 2023, 2026 Harald Albrecht, licensed under the Apache License, Version
+2.0.
