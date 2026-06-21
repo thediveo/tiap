@@ -18,13 +18,14 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/moby/moby/client"
 	"github.com/thediveo/morbyd"
 	"github.com/thediveo/morbyd/pull"
 	"github.com/thediveo/morbyd/push"
 	"github.com/thediveo/morbyd/run"
 	"github.com/thediveo/morbyd/session"
 	"github.com/thediveo/morbyd/timestamper"
+
+	"github.com/thediveo/tiap/test/platform"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -50,7 +51,7 @@ var localRegistryBBStableImage = fmt.Sprintf("127.0.0.1:%d/%s", registryPort, bb
 var canaryPlatform string
 
 var _ = BeforeSuite(func(ctx context.Context) {
-	canaryPlatform = determinePlatform(ctx)
+	canaryPlatform = Successful(platform.Detect(ctx))
 
 	sess := Successful(morbyd.NewSession(ctx,
 		session.WithAutoCleaning("test=tiap.command")))
@@ -75,7 +76,7 @@ var _ = BeforeSuite(func(ctx context.Context) {
 			nil))
 		resp, err := http.DefaultClient.Do(req)
 		if resp != nil {
-			resp.Body.Close()
+			Expect(resp.Body.Close()).To(Succeed())
 		}
 		return err
 	}).Within(5 * time.Second).ProbeEvery(500 * time.Millisecond).
@@ -102,23 +103,6 @@ var _ = BeforeSuite(func(ctx context.Context) {
 		push.WithOutput(timestamper.New(GinkgoWriter)))).To(Succeed())
 	Expect(sess.RemoveImage(ctx, localRegistryBBStableImage)).Error().NotTo(HaveOccurred())
 })
-
-func determinePlatform(ctx context.Context) string {
-	moby := Successful(client.NewClientWithOpts(client.WithAPIVersionNegotiation()))
-	defer moby.Close()
-
-	info := Successful(moby.Info(ctx))
-	arch := info.Architecture
-	switch arch {
-	case "x86_64":
-		arch = "amd64"
-	case "aarch64":
-		arch = "arm64"
-	default:
-		Fail("unsupported architecture: " + arch)
-	}
-	return info.OSType + "/" + arch
-}
 
 func Byf(format string, a ...any) {
 	By(fmt.Sprintf(format, a...))

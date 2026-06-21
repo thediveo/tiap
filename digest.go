@@ -50,7 +50,7 @@ func fileDigests(rootfs fs.FS) (map[string]string, error) {
 		if err != nil {
 			return fmt.Errorf("cannot open %s, reason: %w", path, err)
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		digester := sha256.New()
 		if _, err := io.Copy(digester, f); err != nil {
 			return fmt.Errorf("cannot determine SHA256 for %s, reason: %w", path, err)

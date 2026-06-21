@@ -23,15 +23,15 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/docker/docker/api/types/image"
 	"github.com/google/go-containerregistry/pkg/name"
 	ociv1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/moby/moby/client"
 	"github.com/thediveo/morbyd"
 	"github.com/thediveo/morbyd/pull"
 	"github.com/thediveo/morbyd/timestamper"
-	"github.com/thediveo/tiap/test/grab"
 	"golang.org/x/sys/unix"
+
+	"github.com/thediveo/tiap/test/grab"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -43,15 +43,15 @@ var _ = Describe("image pulling and saving", Ordered, func() {
 	var moby *client.Client
 
 	BeforeAll(func(ctx context.Context) {
-		moby = Successful(client.NewClientWithOpts(client.WithAPIVersionNegotiation()))
-		DeferCleanup(func() { moby.Close() })
+		moby = Successful(client.New())
+		DeferCleanup(moby.Close)
 	})
 
 	var tmpBundleDirPath string
 
 	BeforeAll(func() {
 		tmpBundleDirPath = Successful(os.MkdirTemp("", "tiap-test-*"))
-		DeferCleanup(func() { os.RemoveAll(tmpBundleDirPath) })
+		DeferCleanup(os.RemoveAll, tmpBundleDirPath)
 	})
 
 	When("things go south", func() {
@@ -93,7 +93,7 @@ var _ = Describe("image pulling and saving", Ordered, func() {
 	When("checking with the daemon first for a local image", func() {
 
 		It("reports no error and returns no image if not available locally", func(ctx context.Context) {
-			_, _ = moby.ImageRemove(ctx, localCanaryImage, image.RemoveOptions{
+			_, _ = moby.ImageRemove(ctx, localCanaryImage, client.ImageRemoveOptions{
 				Force:         true, // ensure test coverage
 				PruneChildren: true,
 			})
@@ -178,15 +178,14 @@ var _ = Describe("image pulling and saving", Ordered, func() {
 		})
 
 		It("does not crash when looking for a local image given a non-nil client", func(ctx context.Context) {
-			moby := Successful(client.NewClientWithOpts(
-				client.WithAPIVersionNegotiation()))
+			moby := Successful(client.New())
 			Expect(func() {
 				_, _ = hasLocalImage(ctx,
 					moby,
 					Successful(name.ParseReference("x-foobar-x")),
 					nil)
 			}).NotTo(Panic())
-			defer moby.Close()
+			defer func() { _ = moby.Close() }()
 		})
 
 	})

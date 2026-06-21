@@ -91,7 +91,7 @@ func SaveImageToFile(ctx context.Context,
 		return "", fmt.Errorf("cannot create image file %q, reason: %w",
 			imageSavePathName, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	slog.Debug("writing image to tar-ball...",
 		slog.String("image", imageref))
 	start := time.Now()

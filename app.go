@@ -28,12 +28,14 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/v1/daemon"
 	"github.com/otiai10/copy"
+	"github.com/thediveo/nonstd/xslog"
+
 	"github.com/thediveo/tiap/interpolate"
-	"golang.org/x/exp/slices"
 )
 
 // App represents an IE App (project) to be packaged.
@@ -57,7 +59,7 @@ func NewApp(source string) (a *App, err error) {
 	}
 	defer func() {
 		if err != nil && tmpDir != "" {
-			os.RemoveAll(tmpDir)
+			_ = os.RemoveAll(tmpDir)
 			a = nil
 		}
 	}()
@@ -109,9 +111,13 @@ func NewApp(source string) (a *App, err error) {
 // Done removes all temporary work files.
 func (a *App) Done() {
 	if a.tmpDir != "" {
-		os.RemoveAll(a.tmpDir)
-		slog.Info("removed temporary folder",
-			slog.String("path", a.tmpDir))
+		if err := os.RemoveAll(a.tmpDir); err != nil {
+			slog.Error("cannot remove temporary folder",
+				slog.String("path", a.tmpDir))
+		} else {
+			slog.Info("removed temporary folder",
+				slog.String("path", a.tmpDir))
+		}
 		a.tmpDir = ""
 	}
 }
@@ -238,7 +244,7 @@ func (a *App) PullAndWriteCompose(
 	if err != nil {
 		return fmt.Errorf("cannot create Docker compose project file, reason: %w", err)
 	}
-	defer composerf.Close()
+	defer func() { _ = composerf.Close() }()
 	err = a.project.Save(composerf)
 	if err != nil {
 		return fmt.Errorf("cannot write Docker compose project file, reason: %w", err)
@@ -264,7 +270,7 @@ func (a *App) Package(out string) error {
 		return fmt.Errorf("cannot create digests.json, reason: %w", err)
 	}
 	err = WriteDigests(digestJson, a.tmpDir)
-	digestJson.Close()
+	_ = digestJson.Close()
 	if err != nil {
 		return err
 	}
@@ -277,9 +283,18 @@ func (a *App) Package(out string) error {
 	if err != nil {
 		return fmt.Errorf("cannot create IE app package file, reason: %w", err)
 	}
-	defer tarball.Close()
+	defer func() {
+		if err := tarball.Close(); err != nil {
+			slog.Error("closing IE app tar-ball failed",
+				slog.String("path", out), xslog.Error(err))
+		}
+	}()
 	tarrer := tar.NewWriter(tarball)
-	defer tarrer.Close()
+	defer func() {
+		if err := tarrer.Close(); err != nil {
+			slog.Error("closing tar writer failed", xslog.Error(err))
+		}
+	}()
 	rootfs := os.DirFS(a.tmpDir)
 	err = fs.WalkDir(rootfs, ".", func(path string, dirEntry fs.DirEntry, err error) error {
 		if err != nil {
@@ -307,13 +322,18 @@ func (a *App) Package(out string) error {
 		if dirEntry.IsDir() {
 			return nil
 		}
-		// Only copy contents if it's a regular file.
-		file, err := rootfs.Open(path)
+		// Only copy contents if it's a regular f.
+		f, err := rootfs.Open(path)
 		if err != nil {
 			return err
 		}
-		defer file.Close()
-		_, err = io.Copy(tarrer, file)
+		defer func() {
+			if err := f.Close(); err != nil {
+				slog.Error("closing file after reading failed",
+					slog.String("path", path), xslog.Error(err))
+			}
+		}()
+		_, err = io.Copy(tarrer, f)
 		if err != nil {
 			return err
 		}

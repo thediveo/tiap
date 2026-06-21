@@ -25,11 +25,13 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/thediveo/gtar"
 	"github.com/thediveo/morbyd/timestamper"
+
 	"github.com/thediveo/tiap/test/grab"
+
+	"github.com/onsi/gomega/types"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/onsi/gomega/types"
 	. "github.com/thediveo/success"
 )
 
@@ -75,7 +77,7 @@ var _ = Describe("tiap command", func() {
 			"--debug",
 			"../../../testdata/app",
 		})
-		os.Setenv("REGISTRY", "127.0.0.1:1/") // non-existing registry
+		Expect(os.Setenv("REGISTRY", "127.0.0.1:1/")).To(Succeed()) // non-existing registry
 		Expect(rootCmd.Execute()).To(
 			MatchError(ContainSubstring("connection refused")))
 	})
@@ -101,7 +103,7 @@ var _ = Describe("tiap command", func() {
 			"--debug",
 			"../../../testdata/app",
 		})
-		os.Setenv("REGISTRY", fmt.Sprintf("127.0.0.1:%d/", registryPort)) // non-existing registry
+		Expect(os.Setenv("REGISTRY", fmt.Sprintf("127.0.0.1:%d/", registryPort))).To(Succeed()) // non-existing registry
 		Expect(rootCmd.Execute()).To(Succeed())
 
 		logs := buff.String()
@@ -115,7 +117,9 @@ var _ = Describe("tiap command", func() {
 
 		Expect(appbundlePath).To(BeARegularFile())
 		apptarIndex := Successful(gtar.New(appbundlePath))
-		defer apptarIndex.Close()
+		defer func() {
+			Expect(apptarIndex.Close()).To(Succeed())
+		}()
 
 		Expect(apptarIndex.AllRegularFilePaths()).To(ContainElements(
 			"detail.json",
@@ -129,7 +133,9 @@ var _ = Describe("tiap command", func() {
 		Expect(imagePaths).To(HaveLen(1))
 
 		digestsf := Successful(apptarIndex.Open("digests.json"))
-		defer digestsf.Close()
+		defer func() {
+			Expect(digestsf.Close()).To(Succeed())
+		}()
 
 		var digests struct {
 			Files map[string]string `json:"files"`
