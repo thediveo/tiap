@@ -26,9 +26,9 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	ociv1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/moby/moby/client"
-	"github.com/thediveo/morbyd"
-	"github.com/thediveo/morbyd/pull"
-	"github.com/thediveo/morbyd/timestamper"
+	"github.com/thediveo/morbyd/v2"
+	"github.com/thediveo/morbyd/v2/pull"
+	"github.com/thediveo/morbyd/v2/timestamper"
 	"golang.org/x/sys/unix"
 
 	"github.com/thediveo/tiap/test/grab"

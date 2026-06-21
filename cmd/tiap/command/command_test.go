@@ -24,7 +24,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/thediveo/gtar"
-	"github.com/thediveo/morbyd/timestamper"
+	"github.com/thediveo/morbyd/v2/timestamper"
 
 	"github.com/thediveo/tiap/test/grab"
 
