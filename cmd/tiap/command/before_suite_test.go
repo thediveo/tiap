@@ -18,12 +18,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/thediveo/morbyd"
-	"github.com/thediveo/morbyd/pull"
-	"github.com/thediveo/morbyd/push"
-	"github.com/thediveo/morbyd/run"
-	"github.com/thediveo/morbyd/session"
-	"github.com/thediveo/morbyd/timestamper"
+	"github.com/thediveo/morbyd/v2"
+	"github.com/thediveo/morbyd/v2/pull"
+	"github.com/thediveo/morbyd/v2/push"
+	"github.com/thediveo/morbyd/v2/run"
+	"github.com/thediveo/morbyd/v2/session"
+	"github.com/thediveo/morbyd/v2/timestamper"
 
 	"github.com/thediveo/tiap/test/platform"
 
