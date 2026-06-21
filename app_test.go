@@ -53,7 +53,7 @@ var _ = Describe("IE app building", func() {
 				tmpDetails := Successful(os.CreateTemp("", "details-*.json"))
 				tmpPath = tmpDetails.Name()
 				closeOnce := sync.OnceFunc(func() {
-					tmpDetails.Close()
+					_ = tmpDetails.Close()
 				})
 				DeferCleanup(func() {
 					closeOnce()
@@ -99,9 +99,9 @@ var _ = Describe("IE app building", func() {
 		It("reports when unable to create a temporary directory", Serial, func() {
 			tmpdir := os.Getenv("TMPDIR")
 			defer func() {
-				os.Setenv("TMPDIR", tmpdir)
+				_ = os.Setenv("TMPDIR", tmpdir)
 			}()
-			os.Setenv("TMPDIR", "/foobar")
+			_ = os.Setenv("TMPDIR", "/foobar")
 			Expect(NewApp("")).Error().To(MatchError(
 				ContainSubstring("cannot create temporary project directory")))
 		})

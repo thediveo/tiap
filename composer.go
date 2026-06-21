@@ -29,8 +29,9 @@ import (
 	"github.com/distribution/reference"
 	"github.com/docker/go-units"
 	"github.com/google/go-containerregistry/pkg/v1/daemon"
-	"github.com/thediveo/tiap/interpolate"
 	"gopkg.in/yaml.v3"
+
+	"github.com/thediveo/tiap/interpolate"
 )
 
 // https://docs.docker.com/compose/compose-file/03-compose-file/ says that

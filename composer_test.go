@@ -63,7 +63,9 @@ var _ = Describe("IE app composer projects", Ordered, func() {
 
 		By("setting up an empty transient testing directory")
 		tmpDirPath := Successful(os.MkdirTemp("", "tiap-test-*"))
-		defer os.RemoveAll(tmpDirPath)
+		defer func() {
+			Expect(os.RemoveAll(tmpDirPath)).To(Succeed())
+		}()
 
 		By("loading a composer project")
 		p := Successful(NewComposerProject("testdata/composer/hellorld/docker-compose.yml"))

@@ -22,7 +22,7 @@ import (
 // badYAMLValue causes the YAML marshaller to throw up.
 type badYAMLValue nada
 
-func (b badYAMLValue) MarshalYAML() (interface{}, error) { return nil, errors.New("bad YAML value") }
+func (b badYAMLValue) MarshalYAML() (any, error) { return nil, errors.New("bad YAML value") }
 
 // badWriter only throws errors on any write attempt.
 type badWriter struct{}
@@ -52,18 +52,18 @@ func (f *badFS) Open(name string) (fs.File, error) {
 	}
 	stat, err := fsf.Stat()
 	if err != nil {
-		fsf.Close()
+		_ = fsf.Close()
 		return nil, err
 	}
 	if stat.IsDir() {
 		if f.fail == fsFailOpenDir {
-			fsf.Close()
+			_ = fsf.Close()
 			return nil, errors.New("badfs open dir error")
 		}
 		return fsf, nil
 	}
 	if f.fail == fsFailOpen {
-		fsf.Close()
+		_ = fsf.Close()
 		return nil, errors.New("badfs open error")
 	}
 	return &badFile{fsf}, nil

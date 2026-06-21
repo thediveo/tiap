@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -33,11 +34,10 @@ import (
 	"github.com/lmittmann/tint"
 	"github.com/moby/moby/client"
 	ispecsv1 "github.com/opencontainers/image-spec/specs-go/v1"
-
 	"github.com/spf13/cobra"
-	"github.com/thediveo/tiap"
-	"golang.org/x/exp/slices"
 	"golang.org/x/sys/unix"
+
+	"github.com/thediveo/tiap"
 )
 
 // Names of CLI flags
@@ -132,8 +132,8 @@ func New(logw io.Writer) (rootCmd *cobra.Command) {
 	return rootCmd
 }
 
-// Register the CLI flags for the tiap (sub)command, returning nil. In case of
-// failure, Register returns a non-nil error instead.
+// RegisterFlags registers the CLI flags for the tiap (sub)command, returning
+// nil. In case of failure, Register returns a non-nil error instead.
 func RegisterFlags(cmd *cobra.Command) error {
 	flags := cmd.Flags()
 
@@ -221,7 +221,7 @@ func Run(cmd *cobra.Command, args []string, logw io.Writer) error {
 	slog.Debug("app project", slog.String("semver", appSemver))
 
 	releaseNotes := successfully(cmd.Flags().GetString(releaseNotesFlagName))
-	rn := strings.Replace(releaseNotes, "\n", "\\n", -1)
+	rn := strings.ReplaceAll(releaseNotes, "\n", "\\n")
 	releaseNotes, err := strconv.Unquote(`"` + rn + `"`)
 	if err != nil {
 		slog.Error("release notes",
@@ -276,19 +276,17 @@ func Run(cmd *cobra.Command, args []string, logw io.Writer) error {
 	if !pullAlways {
 		slog.Debug("creating Docker/Moby client")
 		dockerHost := successfully(cmd.Flags().GetString(dockerHostFlagName))
-		opts := []client.Opt{
-			client.WithAPIVersionNegotiation(),
-		}
+		opts := []client.Opt{}
 		if dockerHost != "" {
 			opts = append(opts, client.WithHost(dockerHost))
 		} else {
 			opts = append(opts, client.WithHostFromEnv())
 		}
-		moby, err = client.NewClientWithOpts(opts...)
+		moby, err = client.New(opts...)
 		if err != nil {
 			return fmt.Errorf("cannot contact Docker daemon, reason: %w", err)
 		}
-		defer moby.Close()
+		defer func() { _ = moby.Close() }()
 		slog.Debug("Docker/Moby client created")
 	}
 

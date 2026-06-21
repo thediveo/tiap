@@ -96,7 +96,8 @@ func (p Path) Append(name string) Path {
 	return Path(string(p) + "." + name)
 }
 
-// Append the index of an element to the path, returning the new Path.
+// AppendIndex appends the index of an element to the path, returning the new
+// Path.
 func (p Path) AppendIndex(idx int) Path {
 	if p == "" {
 		return Path("[" + strconv.FormatInt(int64(idx), 10) + "]")
