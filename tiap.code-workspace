@@ -62,11 +62,5 @@
 			}
 		],
 		"compounds": []
-	},
-	"extensions": {
-		"recommendations": [
-			"ms-vscode.live-server",
-			"njzy.stats-bar"
-		]
 	}
 }
