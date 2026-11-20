@@ -193,10 +193,7 @@ func Run(cmd *cobra.Command, args []string, logw io.Writer) error {
 		slogOpts.Level = slog.LevelDebug
 	}
 	slog.SetDefault(slog.New(
-		tint.NewHandler(logw, &tint.Options{
-			Level:      slogOpts.Level,
-			TimeFormat: time.RFC3339,
-		}),
+		tint.NewTextHandler(logw, &tint.Options{Level: slogOpts.Level, TimeFormat: time.RFC3339}),
 	))
 	slog.Info("tiap ... isn't app publisher",
 		slog.String("version", cmd.Version),
