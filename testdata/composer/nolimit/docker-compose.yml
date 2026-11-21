@@ -1,0 +1,5 @@
+services:
+  baz:
+    image: "alpine:earliest"
+notworks:
+  posthoernchen:

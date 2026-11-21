@@ -16,6 +16,7 @@ package tiap
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -26,12 +27,12 @@ import (
 	"slices"
 	"time"
 
+	"github.com/compose-spec/compose-go/v2/loader"
+	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/distribution/reference"
-	"github.com/docker/go-units"
 	"github.com/google/go-containerregistry/pkg/v1/daemon"
+	"github.com/thediveo/nonstd/sets"
 	"gopkg.in/yaml.v3"
-
-	"github.com/thediveo/tiap/interpolate"
 )
 
 // https://docs.docker.com/compose/compose-file/03-compose-file/ says that
@@ -41,9 +42,10 @@ var composerFiles = []string{
 	"docker-compose.yml",
 }
 
-// ComposerProject represents a loaded Docker composer project.
+// ComposerProject represents a loaded (Docker) compose project.
 type ComposerProject struct {
-	yaml map[string]any
+	composeyaml map[string]any // this compose project in canonical form.
+	project     *types.Project
 }
 
 // LoadComposerProject looks in the specified “dir” for a Docker composer
@@ -51,39 +53,82 @@ type ComposerProject struct {
 // composer project file names into account. However, contrary to Docker's
 // composer, it doesn't look into parent directories for project files and it
 // doesn't take overrides into account.
-func LoadComposerProject(dir string) (*ComposerProject, error) {
+func LoadComposerProject(ctx context.Context, workingDir string, envvars map[string]string) (*ComposerProject, error) {
 	for _, projectFilename := range composerFiles {
-		name := filepath.Join(dir, projectFilename)
-		if _, err := os.Stat(name); err == nil {
-			return NewComposerProject(name)
+		if _, err := os.Stat(filepath.Join(workingDir, projectFilename)); err == nil {
+			return NewComposerProject(ctx, workingDir, projectFilename, envvars)
 		}
 	}
-	return nil, fmt.Errorf("no composer project file found in directory %s", dir)
+	return nil, fmt.Errorf("no composer project file found in directory %s", workingDir)
 }
 
 // NewComposerProject reads the specified YAML file containing a (Docker)
 // composer project and returns a ComposerProject object for it.
-func NewComposerProject(path string) (*ComposerProject, error) {
-	yamltext, err := os.ReadFile(path)
+func NewComposerProject(ctx context.Context, workingDir, name string, envvars map[string]string) (*ComposerProject, error) {
+	// Configure the loader and get the YAML (with some checks).
+	details, err := loader.LoadConfigFiles(ctx,
+		// Caveat emptor: LoadConfigFiles does not resolve relative config paths
+		// against workingDir, **facepalm**.
+		[]string{filepath.Join(workingDir, name)},
+		workingDir)
 	if err != nil {
-		return nil, fmt.Errorf("cannot read composer project, reason: %w", err)
+		return nil, fmt.Errorf("cannot load composer project file(s), reason: %w", err)
 	}
-	p := &ComposerProject{}
-	if err := yaml.Unmarshal(yamltext, &p.yaml); err != nil {
-		return nil, fmt.Errorf("malformed composer project, reason: %w", err)
+	details.Environment = envvars
+	reponame := filepath.Base(workingDir)
+	if reponame == "" || reponame == "." || reponame == string(filepath.Separator) {
+		return nil, fmt.Errorf("invalid repo name-less working dir %q", workingDir)
 	}
+	composeyaml, err := loader.LoadModelWithContext(ctx,
+		*details,
+		func(opts *loader.Options) { opts.SetProjectName(reponame, false) })
+	if err != nil {
+		return nil, fmt.Errorf("cannot load composer project model, reason: %w", err)
+	}
+	lopts := loader.ToOptions(details, nil)
+	lopts.SetProjectName(composeyaml["name"].(string), true)
+	project, err := loader.ModelToProject(
+		composeyaml,
+		lopts,
+		*details,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("cannot load composer project, reason: %w", err)
+	}
+	p := &ComposerProject{
+		composeyaml: composeyaml,
+		project:     project,
+	}
+
+	if err := p.checkProjectName(reponame); err != nil {
+		return nil, err
+	}
+	if err := p.checkServiceMemlimits(); err != nil {
+		return nil, err
+	}
+
 	return p, nil
 }
 
-// Interpolate all variables in this composer project using the specified
-// variables, updating the project's YAML data accordingly. In case of
-// interpolation problems, it returns an error, otherwise nil.
-func (cp *ComposerProject) Interpolate(vars map[string]string) error {
-	yaml, err := interpolate.Variables(cp.yaml, vars)
-	if err != nil {
-		return err
+// checkServiceMemlimits checks that all services declare memory limits
+// other than zero.
+func (p *ComposerProject) checkServiceMemlimits() error {
+	for _, service := range p.project.Services {
+		if service.MemLimit == 0 {
+			return fmt.Errorf("service %q has no mem_limit declaration", service.Name)
+		}
 	}
-	cp.yaml = yaml
+	return nil
+}
+
+// checkProjectName checks that the project's name matches the detected
+// repo name; otherwise, the Edge runtime will react erratically claiming an app
+// wasn't started when in fact it was successfully deployed. This appears to be
+// a bug in the Edge runtime detection logic.
+func (p *ComposerProject) checkProjectName(reponame string) error {
+	if p.project.Name != reponame {
+		return fmt.Errorf("project name %q does not match detected repo name %q", p.project.Name, reponame)
+	}
 	return nil
 }
 
@@ -92,49 +137,35 @@ func (cp *ComposerProject) Interpolate(vars map[string]string) error {
 type ServiceImages map[string]string
 
 // Images returns the mapping between services defined in this composer project
-// and the container images they reference.
+// and the container images they reference. It rejects any attempts to use the
+// "latest" tag without also sha256-pinning.
 func (p *ComposerProject) Images() (ServiceImages, error) {
 	svcimgs := ServiceImages{}
 
-	services, err := lookupMap(p.yaml, "services")
-	if err != nil {
-		return nil, fmt.Errorf("no services found, reason: %w", err)
+	if p.project == nil || len(p.project.Services) == 0 {
+		return nil, errors.New("no services defined")
 	}
-	for serviceName := range services {
-		config, err := lookupMap(services, serviceName)
-		if err != nil {
-			return nil, fmt.Errorf("invalid service %q, reason: %w", serviceName, err)
-		}
-		imageRef, err := lookupString(config, "image")
-		if err != nil {
-			return nil, fmt.Errorf("invalid image element in service %q, reason: %w", serviceName, err)
+	for _, service := range p.project.Services {
+		if service.Image == "" {
+			return nil, fmt.Errorf("service %q with empty image reference", service.Name)
 		}
 		slog.Info("want image",
-			slog.String("service", serviceName),
-			slog.String("image", imageRef))
-		ir, err := reference.Parse(imageRef)
+			slog.String("service", service.Name),
+			slog.String("image", service.Image))
+		imgref, err := reference.Parse(service.Image)
 		if err != nil {
 			return nil, fmt.Errorf("service %q with invalid image reference %q, reason: %w",
-				serviceName, imageRef, err)
+				service.Name, service.Image, err)
 		}
-		if tagged, ok := ir.(reference.Tagged); ok && tagged.Tag() == "latest" {
-			return nil, fmt.Errorf("service %q attempts to use latest tag", serviceName)
+		tagged, tagOk := imgref.(reference.NamedTagged)
+		_, digestOk := imgref.(reference.Digested)
+		if tagOk && tagged.Tag() == "latest" && !digestOk {
+			return nil, fmt.Errorf("service %q attempts to use latest tag without digest", service.Name)
 		}
-		svcimgs[serviceName] = imageRef
-		memLimit, err := lookupString(config, "mem_limit")
-		if err != nil {
-			return nil, fmt.Errorf("service %q lacks mem_limit declaration", serviceName)
-		}
-		if _, err := units.FromHumanSize(memLimit); err != nil {
-			return nil, fmt.Errorf("service %q has invalid mem_limit %q, reason: %w",
-				serviceName, memLimit, err)
-		}
+		svcimgs[service.Name] = service.Image
 	}
-
 	return svcimgs, nil
 }
-
-type nada struct{} // not "any"
 
 // PullImages takes a service-to-image reference mapping and pulls and saves the
 // required container images. The caller is responsible to supply the correct
@@ -149,10 +180,10 @@ func (p *ComposerProject) PullImages(
 	optclient daemon.Client,
 ) error {
 	// As multiple services might reference the same container image and we must
-	// pull an image only once we first determine the unique image references.
-	uniqueImageRefs := map[string]nada{}
+	// pull an image only after we first determine the unique image references.
+	uniqueImageRefs := sets.New[string]()
 	for _, imageRef := range serviceimgs {
-		uniqueImageRefs[imageRef] = nada{}
+		uniqueImageRefs.Add(imageRef)
 	}
 	slog.Debug("fetching and tar-ball'ing images...",
 		slog.Int("image-count", len(uniqueImageRefs)))
@@ -180,7 +211,7 @@ func (p *ComposerProject) PullImages(
 // an error in case of failure.
 func (p *ComposerProject) Save(w io.Writer) error {
 	slog.Debug("saving composer project...")
-	b, err := yaml.Marshal(p.yaml)
+	b, err := yaml.Marshal(p.composeyaml)
 	if err != nil {
 		return fmt.Errorf("cannot write composer project, reason: %w", err)
 	}
@@ -189,28 +220,4 @@ func (p *ComposerProject) Save(w io.Writer) error {
 		return fmt.Errorf("cannot write composer project, reason: %w", err)
 	}
 	return nil
-}
-
-func lookupMap(yaml map[string]any, key string) (map[string]any, error) {
-	element := yaml[key]
-	if element == nil {
-		return nil, fmt.Errorf("no %s found in composer project", key)
-	}
-	m, ok := element.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("%s in composer project is not an associative array", key)
-	}
-	return m, nil
-}
-
-func lookupString(yaml map[string]any, key string) (string, error) {
-	element := yaml[key]
-	if element == nil {
-		return "", fmt.Errorf("no %s found in composer project", key)
-	}
-	s, ok := element.(string)
-	if !ok {
-		return "", fmt.Errorf("%s in composer project is not a string", key)
-	}
-	return s, nil
 }

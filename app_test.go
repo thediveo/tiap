@@ -96,32 +96,32 @@ var _ = Describe("IE app building", func() {
 
 	When("loading an IE app template", func() {
 
-		It("reports when unable to create a temporary directory", Serial, func() {
+		It("reports when unable to create a temporary directory", Serial, func(ctx context.Context) {
 			tmpdir := os.Getenv("TMPDIR")
 			defer func() {
 				_ = os.Setenv("TMPDIR", tmpdir)
 			}()
 			_ = os.Setenv("TMPDIR", "/foobar")
-			Expect(NewApp("")).Error().To(MatchError(
+			Expect(NewApp(ctx, "", nil)).Error().To(MatchError(
 				ContainSubstring("cannot create temporary project directory")))
 		})
 
-		It("reports when unable to read template files", func() {
+		It("reports when unable to read template files", func(ctx context.Context) {
 			defer grab.Log(GinkgoWriter, slog.LevelInfo)()
-			Expect(NewApp("/nothing-nada-nil")).Error().To(MatchError(
+			Expect(NewApp(ctx, "/nothing-nada-nil", nil)).Error().To(MatchError(
 				ContainSubstring("cannot copy app template structure")))
 		})
 
-		It("reports missing repo directory", func() {
+		It("reports missing repo directory", func(ctx context.Context) {
 			defer grab.Log(GinkgoWriter, slog.LevelInfo)()
-			Expect(NewApp("testdata/brokenapp")).Error().To(MatchError(
+			Expect(NewApp(ctx, "testdata/brokenapp", nil)).Error().To(MatchError(
 				ContainSubstring("project lacks Docker compose")))
 		})
 
-		It("reports when unable to load malformed composer project", func() {
+		It("reports when unable to load malformed composer project", func(ctx context.Context) {
 			defer grab.Log(GinkgoWriter, slog.LevelInfo)()
-			Expect(NewApp("testdata/brokencompose")).Error().To(MatchError(
-				ContainSubstring("malformed composer project")))
+			Expect(NewApp(ctx, "testdata/brokencompose", nil)).Error().To(MatchError(
+				ContainSubstring("yaml: line 4: found unexpected end of stream")))
 		})
 
 	})
@@ -144,40 +144,39 @@ var _ = Describe("IE app building", func() {
 
 	})
 
-	It("reports cancelled pull context", func() {
+	It("reports cancelled pull context", func(ctx context.Context) {
 		defer grab.Log(GinkgoWriter, slog.LevelInfo)()
-		ctx, cancel := context.WithCancel(context.Background())
+		pullctx, cancel := context.WithCancel(ctx)
 		cancel()
-		a := Successful(NewApp("testdata/app"))
-		Expect(a.project.Interpolate(nil)).To(Succeed())
+		a := Successful(NewApp(ctx, "testdata/app", map[string]string{
+			"REGISTRY": "",
+		}))
 		defer a.Done()
-		Expect(a.PullAndWriteCompose(ctx, canaryPlatform, nil)).To(MatchError(
+		Expect(a.PullAndWriteCompose(pullctx, canaryPlatform, nil)).To(MatchError(
 			ContainSubstring("context canceled")))
 	})
 
 	It("loads an app template, sets details, pulls, and packages", slowSpec, func(ctx context.Context) {
 		defer grab.Log(GinkgoWriter, slog.LevelInfo)()
-		a := Successful(NewApp("testdata/app"))
-		Expect(a.project.Interpolate(map[string]string{
+		a := Successful(NewApp(ctx, "testdata/app", map[string]string{
 			"REGISTRY": localRegistry,
-		})).To(Succeed())
+		}))
 		defer a.Done()
 		Expect(a.SetDetails("1.2.3-faselblah", "", "", nil)).To(Succeed())
 		Expect(a.PullAndWriteCompose(ctx, canaryPlatform, nil)).To(Succeed())
 		Expect(a.Package("/tmp/hellorld.app")).To(Succeed())
 	})
 
-	It("interpolates", func() {
+	It("interpolates", func(ctx context.Context) {
 		defer grab.Log(GinkgoWriter, slog.LevelInfo)()
-		a := Successful(NewApp("testdata/interpolated-app"))
-		defer a.Done()
 		vars := map[string]string{
 			"IMGREF":        "latest",
 			"DESCRIPTION":   "a famous description",
 			"RELEASE_NOTES": "the release notes",
 		}
-		Expect(a.Interpolate(vars)).To(Succeed())
-		Expect(a.project.yaml).To(
+		a := Successful(NewApp(ctx, "testdata/interpolated-app", vars))
+		defer a.Done()
+		Expect(a.project.composeyaml).To(
 			HaveKeyWithValue("services",
 				HaveKeyWithValue("hellorld",
 					HaveKeyWithValue("image", "busybox:latest"))))

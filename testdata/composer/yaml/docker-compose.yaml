@@ -1,10 +1,12 @@
-version: '42'
 services:
   foo:
     image: "busybox:latest"
+    mem_limit: 640k
   bar:
     image: "alpine:latest"
+    mem_limit: 640k
   baz:
     image: "alpine:latest"
-notworks:
+    mem_limit: 640k
+networks:
   posthoernchen:
