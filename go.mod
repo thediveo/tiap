@@ -29,7 +29,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/containerd/console v1.0.5 // indirect
 	github.com/containerd/containerd/api v1.12.0 // indirect
-	github.com/containerd/containerd/v2 v2.4.0 // indirect
+	github.com/containerd/containerd/v2 v2.4.2 // indirect
 	github.com/containerd/continuity v0.5.0 // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
@@ -87,11 +87,12 @@ require (
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.71.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.70.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0 // indirect
-	go.opentelemetry.io/otel v1.46.0 // indirect
+	go.opentelemetry.io/otel v1.47.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.46.0 // indirect
-	go.opentelemetry.io/otel/metric v1.46.0 // indirect
+	go.opentelemetry.io/otel/log v1.47.0 // indirect
+	go.opentelemetry.io/otel/metric v1.47.0 // indirect
 	go.opentelemetry.io/otel/sdk v1.46.0 // indirect
-	go.opentelemetry.io/otel/trace v1.46.0 // indirect
+	go.opentelemetry.io/otel/trace v1.47.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	go.yaml.in/yaml/v4 v4.0.0 // indirect
