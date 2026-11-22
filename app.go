@@ -31,11 +31,10 @@ import (
 	"slices"
 	"time"
 
+	"github.com/compose-spec/compose-go/v2/interpolation"
 	"github.com/google/go-containerregistry/pkg/v1/daemon"
 	"github.com/otiai10/copy"
 	"github.com/thediveo/nonstd/xslog"
-
-	"github.com/thediveo/tiap/interpolate"
 )
 
 // App represents an IE App (project) to be packaged.
@@ -52,7 +51,7 @@ const DefaultIEAppArch = "x86-64"
 
 // NewApp returns an IE App object initialized from the specified “template”
 // path.
-func NewApp(source string) (a *App, err error) {
+func NewApp(ctx context.Context, templatePath string, envvars map[string]string) (a *App, err error) {
 	tmpDir, err := os.MkdirTemp("", "tiap-project-*")
 	if err != nil {
 		return nil, fmt.Errorf("cannot create temporary project directory, reason: %w", err)
@@ -65,15 +64,16 @@ func NewApp(source string) (a *App, err error) {
 	}()
 
 	// Copy the "template" app file/folder structure into a temporary place, but
-	// skip any Docker composer file for now. However, the notice its directory
-	// as the "repository".
+	// skip any Docker composer file for now. However, remember its directory as
+	// the "repository" (also known as the "repo name" in other places).
 	slog.Info("creating temporary project copy",
 		slog.String("path", tmpDir))
-	repo := ""
-	err = copy.Copy(source, tmpDir, copy.Options{
+	reponame := ""
+	err = copy.Copy(templatePath, tmpDir, copy.Options{
+		// skip the docker-compose.ya?ml files, yet at the same time
 		Skip: func(info os.FileInfo, src, dest string) (bool, error) {
 			if slices.Contains(composerFiles, info.Name()) {
-				repo = filepath.Dir(src)
+				reponame = filepath.Dir(src)
 				return true, nil
 			}
 			return false, nil
@@ -82,27 +82,29 @@ func NewApp(source string) (a *App, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot copy app template structure, reason: %w", err)
 	}
-	if repo == "" {
+	if reponame == "" {
 		return nil, errors.New("project lacks Docker compose project file")
 	}
-	repo, err = filepath.Rel(source, repo)
+	reponame, err = filepath.Rel(templatePath, reponame)
 	if err != nil {
 		return nil, errors.New("cannot determine relative repository path")
 	}
 	slog.Info("app repository detected",
-		slog.String("repo", repo))
+		slog.String("repo", reponame))
 
-	// Try to locate and load the Docker composer project
-	//
-	project, err := LoadComposerProject(filepath.Join(source, repo))
+	// Try to locate and load the Docker composer project -- note that we didn't
+	// copy the compose file yet on purpose, so we need to open it in its
+	// original ("template") location.
+	project, err := LoadComposerProject(ctx,
+		filepath.Join(templatePath, reponame), envvars)
 	if err != nil {
 		return nil, err
 	}
 
 	a = &App{
-		sourcePath: source,
+		sourcePath: templatePath,
 		tmpDir:     tmpDir,
-		repo:       repo,
+		repo:       reponame,
 		project:    project,
 	}
 	return
@@ -120,13 +122,6 @@ func (a *App) Done() {
 		}
 		a.tmpDir = ""
 	}
-}
-
-// Interpolate all variables in the app's composer project using the specified
-// variables, updating the project's YAML data accordingly. In case of
-// interpolation problems, it returns an error, otherwise nil.
-func (a *App) Interpolate(vars map[string]string) error {
-	return a.project.Interpolate(vars)
 }
 
 // SetDetails sets the semver (“versionNumber”, oh well) of this release, notes
@@ -148,7 +143,7 @@ func setDetails(
 	semver string,
 	releasenotes string,
 	iearch string,
-	vars map[string]string,
+	envvars map[string]string,
 ) error {
 	// First read in and parse the detail.json file, before working on the, erm,
 	// details.
@@ -166,9 +161,13 @@ func setDetails(
 	// If interpolation has been enabled, interpolate all variables that might
 	// be lurking in the string elements of the JSON data, either in plain
 	// strings, object field values, or inside arrays of string values.
-	if vars != nil {
+	if envvars != nil {
 		slog.Debug("interpolating detail.json environment variables")
-		interpolDetails, err := interpolate.Variables(details, vars)
+		interpolDetails, err := interpolation.Interpolate(details,
+			interpolation.Options{LookupValue: func(key string) (string, bool) {
+				value, ok := envvars[key]
+				return value, ok
+			}})
 		if err != nil {
 			return fmt.Errorf("malformed detail.json, reason: %w", err)
 		}

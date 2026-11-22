@@ -21,12 +21,14 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/Masterminds/semver/v3"
@@ -186,6 +188,13 @@ func RegisterFlags(cmd *cobra.Command) error {
 // Run the tiap (sub)command with the supplied arguments, doing the work and
 // returning nil. If the command fails, it returns a non-nil error instead.
 func Run(cmd *cobra.Command, args []string, logw io.Writer) error {
+	ctx, stop := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt, // Ctrl+C (SIGINT)
+		syscall.SIGTERM,
+	)
+	defer stop()
+
 	slogOpts := slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}
@@ -193,10 +202,7 @@ func Run(cmd *cobra.Command, args []string, logw io.Writer) error {
 		slogOpts.Level = slog.LevelDebug
 	}
 	slog.SetDefault(slog.New(
-		tint.NewHandler(logw, &tint.Options{
-			Level:      slogOpts.Level,
-			TimeFormat: time.RFC3339,
-		}),
+		tint.NewTextHandler(logw, &tint.Options{Level: slogOpts.Level, TimeFormat: time.RFC3339}),
 	))
 	slog.Info("tiap ... isn't app publisher",
 		slog.String("version", cmd.Version),
@@ -230,23 +236,15 @@ func Run(cmd *cobra.Command, args []string, logw io.Writer) error {
 		osExit(1)
 	}
 
-	app, err := tiap.NewApp(args[0])
-	if err != nil {
-		return err
-	}
-	defer app.Done()
-
 	var vars map[string]string // nil means no interpolation at all
 	if successfully(cmd.Flags().GetBool(interpolationFlagName)) {
 		vars = envVars()
 	}
-	if vars != nil {
-		if err := app.Interpolate(vars); err != nil {
-			slog.Error("interpolating compose project variables",
-				slog.String("error", err.Error()))
-			osExit(1)
-		}
+	app, err := tiap.NewApp(ctx, args[0], vars)
+	if err != nil {
+		return err
 	}
+	defer app.Done()
 
 	platform := unerringly(
 		platforms.Parse(successfully(cmd.Flags().GetString(platformFlagName))))

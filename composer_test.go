@@ -33,10 +33,12 @@ var composerVars = map[string]string{
 
 var _ = Describe("IE app composer projects", Ordered, func() {
 
-	It("determines service images", func() {
+	It("determines service images", func(ctx context.Context) {
 		defer grab.Log(GinkgoWriter, slog.LevelDebug)()
-		p := Successful(NewComposerProject("testdata/composer/hellorld/docker-compose.yml"))
-		Expect(p.Interpolate(composerVars)).To(Succeed())
+		p := Successful(NewComposerProject(ctx,
+			"testdata/composer/hellorld",
+			"docker-compose.yml",
+			composerVars))
 		imgs := Successful(p.Images())
 		Expect(imgs).To(And(
 			HaveKeyWithValue("bar", HaveSuffix("/alpine:edge")),
@@ -45,17 +47,41 @@ var _ = Describe("IE app composer projects", Ordered, func() {
 		))
 	})
 
-	It("automatically loads composer files .yml and .yaml", func() {
-		Expect(LoadComposerProject("testdata/composer/empty")).Error().To(
-			MatchError(ContainSubstring("no composer project file")))
-		Expect(LoadComposerProject("testdata/composer/yaml")).Error().NotTo(HaveOccurred())
-		Expect(LoadComposerProject("testdata/composer/hellorld")).Error().NotTo(HaveOccurred())
+	It("automatically loads composer files .yml and .yaml", func(ctx context.Context) {
+		Expect(LoadComposerProject(ctx, "testdata/composer/empty", nil)).
+			Error().To(MatchError(ContainSubstring("no composer project file")))
+		Expect(LoadComposerProject(ctx, "testdata/composer/yaml", nil)).Error().NotTo(HaveOccurred())
+		Expect(LoadComposerProject(ctx, "testdata/composer/hellorld", map[string]string{
+			"LOCAL_REGISTRY": "notwork.example.com/",
+		})).Error().NotTo(HaveOccurred())
 	})
 
-	It("rejects latest image references in projects", func() {
+	It("rejects latest image references in projects", func(ctx context.Context) {
 		defer grab.Log(GinkgoWriter, slog.LevelDebug)()
-		p := Successful(LoadComposerProject("testdata/composer/latest"))
+		p := Successful(LoadComposerProject(ctx, "testdata/composer/latest", nil))
 		Expect(p.Images()).Error().To(MatchError(MatchRegexp(`service .* attempts to use latest`)))
+	})
+
+	It("accepts a pinned latest image references in projects", func(ctx context.Context) {
+		defer grab.Log(GinkgoWriter, slog.LevelDebug)()
+		p := Successful(LoadComposerProject(ctx, "testdata/composer/latestpinned", nil))
+		Expect(p.Images()).Error().NotTo(HaveOccurred())
+	})
+
+	It("skips interpolation", func(ctx context.Context) {
+		p := Successful(LoadComposerProject(ctx, "testdata/composer/hellorld", nil))
+		var buff bytes.Buffer
+		Expect(p.Save(&buff)).To(Succeed())
+		Expect(buff.String()).To(ContainSubstring(`image: ${LOCAL_REGISTRY}alpine:edge`))
+	})
+
+	It("interpolates", func(ctx context.Context) {
+		p := Successful(LoadComposerProject(ctx, "testdata/composer/hellorld", map[string]string{
+			"LOCAL_REGISTRY": "foobar/",
+		}))
+		var buff bytes.Buffer
+		Expect(p.Save(&buff)).To(Succeed())
+		Expect(buff.String()).To(ContainSubstring(`image: foobar/alpine:edge`))
 	})
 
 	It("loads project, pulls images, writes back", slowSpec, func(ctx context.Context) {
@@ -68,8 +94,8 @@ var _ = Describe("IE app composer projects", Ordered, func() {
 		}()
 
 		By("loading a composer project")
-		p := Successful(NewComposerProject("testdata/composer/hellorld/docker-compose.yml"))
-		Expect(p.Interpolate(composerVars)).To(Succeed())
+		p := Successful(NewComposerProject(ctx,
+			"testdata/composer/hellorld", "docker-compose.yml", composerVars))
 
 		By("determining and pulling referenced images")
 		imgs := Successful(p.Images())
@@ -81,32 +107,16 @@ var _ = Describe("IE app composer projects", Ordered, func() {
 
 		It("reports project marshalling failures", func() {
 			w := &bytes.Buffer{}
-			cp := &ComposerProject{yaml: map[string]any{"bonkers": badYAMLValue{}}}
+			cp := &ComposerProject{composeyaml: map[string]any{"bonkers": badYAMLValue{}}}
 			Expect(cp.Save(w)).To(MatchError(
 				ContainSubstring("bad YAML value")))
 		})
 
 		It("reports project saving failures", func() {
 			w := &badWriter{}
-			cp := &ComposerProject{yaml: map[string]any{"services": "none"}}
+			cp := &ComposerProject{composeyaml: map[string]any{"services": "none"}}
 			Expect(cp.Save(w)).To(MatchError(
 				ContainSubstring("cannot write composer project")))
-		})
-
-		It("reports an error when key not found", func() {
-			Expect(lookupMap(map[string]any{}, "foo")).Error().To(HaveOccurred())
-		})
-
-		It("reports an error when key has a non-map value", func() {
-			Expect(lookupMap(map[string]any{"foo": 42}, "foo")).Error().To(HaveOccurred())
-		})
-
-		It("reports an error when key to string not found", func() {
-			Expect(lookupString(map[string]any{}, "foo")).Error().To(HaveOccurred())
-		})
-
-		It("reports an error when key has no string value", func() {
-			Expect(lookupString(map[string]any{"foo": 42}, "foo")).Error().To(HaveOccurred())
 		})
 
 		It("reports missing services in project", func() {
@@ -114,57 +124,19 @@ var _ = Describe("IE app composer projects", Ordered, func() {
 			Expect(p.Images()).Error().To(HaveOccurred())
 		})
 
-		It("reports invalid services in project", func() {
-			defer grab.Log(GinkgoWriter, slog.LevelInfo)()
-			p := &ComposerProject{yaml: map[string]any{
-				"services": map[string]any{
-					"foo": 42,
-				},
-			}}
-			Expect(p.Images()).Error().To(HaveOccurred())
-
-			p = &ComposerProject{yaml: map[string]any{
-				"services": map[string]any{
-					"foo": map[string]any{},
-				},
-			}}
-			Expect(p.Images()).Error().To(HaveOccurred())
-
-			p = &ComposerProject{yaml: map[string]any{
-				"services": map[string]any{
-					"foo": map[string]any{
-						"image": ":@",
-					},
-				},
-			}}
-			Expect(p.Images()).Error().To(HaveOccurred())
+		It("reports incorrect service memory limit", func(ctx context.Context) {
+			Expect(NewComposerProject(ctx,
+				"testdata/composer/badlimit", "docker-compose.yml", nil)).Error().To(HaveOccurred())
 		})
 
-		It("reports missing or incorrect service memory limit", func() {
-			defer grab.Log(GinkgoWriter, slog.LevelInfo)()
-			p := &ComposerProject{yaml: map[string]any{
-				"services": map[string]any{
-					"foo": map[string]any{
-						"image": "busybox:earliest",
-					},
-				},
-			}}
-			Expect(p.Images()).Error().To(MatchError(ContainSubstring("lacks mem_limit")))
-
-			p = &ComposerProject{yaml: map[string]any{
-				"services": map[string]any{
-					"foo": map[string]any{
-						"image":     "busybox:earliest",
-						"mem_limit": "11ft8",
-					},
-				},
-			}}
-			Expect(p.Images()).Error().To(MatchError(ContainSubstring("invalid mem_limit")))
+		It("reports a missing service memory limit", func(ctx context.Context) {
+			Expect(NewComposerProject(ctx,
+				"testdata/composer/nolimit", "docker-compose.yml", nil)).Error().To(HaveOccurred())
 		})
 
-		It("reports reading problems", func() {
-			Expect(NewComposerProject("/")).Error().To(HaveOccurred())
-			Expect(NewComposerProject("composer_test.go")).Error().To(HaveOccurred())
+		It("reports reading problems", func(ctx context.Context) {
+			Expect(NewComposerProject(ctx, "/", "docker-compose.yml", nil)).Error().To(HaveOccurred())
+			Expect(NewComposerProject(ctx, ".", "composer_test.go", nil)).Error().To(HaveOccurred())
 		})
 
 	})

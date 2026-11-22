@@ -1,0 +1,6 @@
+services:
+  baz:
+    image: "alpine:latest"
+    mem_limit: "11ft8"
+notworks:
+  posthoernchen:

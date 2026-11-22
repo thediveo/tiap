@@ -3,17 +3,21 @@
 [![PkgGoDev](https://img.shields.io/badge/-reference-blue?logo=go&logoColor=white&labelColor=505050)](https://pkg.go.dev/github.com/thediveo/tiap)
 [![GitHub](https://img.shields.io/github/license/thediveo/tiap)](https://img.shields.io/github/license/thediveo/tiap)
 ![build and test](https://github.com/thediveo/tiap/actions/workflows/buildandtest.yaml/badge.svg?branch=master)
-![Coverage](https://img.shields.io/badge/Coverage-90.9%25-brightgreen)
-[![Go Report Card](https://goreportcard.com/badge/github.com/thediveo/tiap)](https://goreportcard.com/report/github.com/thediveo/tiap)
+![Coverage](https://img.shields.io/badge/Coverage-86.2%25-brightgreen)
 
 `tiap` is a small Go module and CLI tool to easily create Industrial Edge `.app`
-files (packages) for continuous delivery. It does nothing more than pulling the
-required container images based on your app's composer project and finally
-bundling all up in an `.app` package. The `.app` file then can be imported by
-users into their IEM systems.
+files (packages) for continuous delivery. It does (almost) nothing more than
+pulling the required container images based on your app's composer project and
+finally bundling all up in an `.app` package. The `.app` file then can be
+imported by users into their IEM systems.
 
-> [!NOTE] Currently, only the most recent stable Go version _N_ is supported,
-> but not necessary _N_-1.
+`tiap` leverages the reference library for parsing and loading Compose YAML
+files,
+[`github.com/compose-spec/compose-go/v2`](https://github.com/compose-spec/compose-go).
+This ensures checking not only on the basic YAML level, but also according to
+the Compose specification, catching certain problems before packaging.
+
+Does some basic safety checks that are specific to Edge app compose projects.
 
 ## Features
 
@@ -43,7 +47,7 @@ users into their IEM systems.
   ```
   
 - environment variable interpolation in both the composer file, as well as the
-  `details.json` (see details below). 
+  `details.json` (needs opt-in, see details below). 
 
 - no need to deal with stateful IE app publisher workspaces.
 
@@ -54,11 +58,12 @@ users into their IEM systems.
 Please note that while `tiap` **doesn't lint** the Docker composer project, it
 still does the following safety checks:
 
-- rejecting `:latest` image references (yes, we're more strict than IE App
-    Publisher here for reasons that still hurt),
+- rejecting `:latest` image references unless they are pinned like in
+    `:latest@sha256:yadayada...`. And yes, we're more strict than IE App
+    Publisher here for reasons that still hurt.
 
 - enforcing `mem_limit` service configuration (as this seems to be the most
-  common stumbling block in a survey of one sample).
+  common stumbling block in a survey of samples of size one).
 
 ## Environment Variable Interpolation
 

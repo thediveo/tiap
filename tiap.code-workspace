@@ -5,9 +5,9 @@
 		}
 	],
 	"settings": {
-		"go.lintTool": "golangci-lint-v2",
+		"go.lintTool": "golangci-lint",
 		"go.alternateTools": {
-			"customFormatter": "golangci-lint-v2"
+			"customFormatter": "golangci-lint"
 		},
 		"go.formatTool": "custom",
 		"go.formatFlags": [
@@ -18,9 +18,6 @@
 		"go.testFlags": [
 			"-v",
 			"-race",
-			"--",
-			"-ginkgo.v",
-			"-ginkgo.no-color"
 		],
 		"gopls": {
 			"ui.semanticTokens": true,
@@ -34,8 +31,9 @@
 		"markdown.styles": [
 			"./.vscode/markdown-preview.css"
 		],
-		"statsBar.memoUsage.format": "$(chip) ${used}/${total} ${unit}, ${percent}%",
-		"statsBar.location": "Right",
+		"files.associations": {
+			"**/testdata/brokencompose/broken/docker-compose.yml": "plaintext"
+		}
 	},
 	"launch": {
 		"version": "0.2.0",
@@ -56,11 +54,12 @@
 				"args": [
 					"--debug",
 					"--pull-always",
-					"-o", "/tmp/hellorld.app",
+					"-o",
+					"/tmp/hellorld.app",
 					"${workspaceFolder}/testdata/app"
 				]
 			}
 		],
 		"compounds": []
-	}
+	},
 }

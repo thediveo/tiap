@@ -1,7 +1,6 @@
-version: '42'
 services:
   foo:
-    image: "${LOCAL_REGISTRY?error: ${LOCAL_REGISTRY} not set}busybox:stable"
+    image: "${LOCAL_REGISTRY?error: $${LOCAL_REGISTRY} not set}busybox:stable"
     mem_limit: 8M # Mega ... not milli
   bar:
     image: "${LOCAL_REGISTRY}alpine:edge" # *snicker* ... how apt
@@ -9,5 +8,5 @@ services:
   baz:
     image: "${LOCAL_REGISTRY}alpine:edge"
     mem_limit: 8M
-notworks:
+networks:
   posthoernchen:

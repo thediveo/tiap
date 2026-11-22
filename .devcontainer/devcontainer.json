@@ -11,9 +11,16 @@
     "features": {
         "ghcr.io/devcontainers/features/node:2": {},
         "ghcr.io/devcontainers/features/go:1": {},
-        "ghcr.io/thediveo/devcontainer-features/go-mod-upgrade:1": {},
+        "ghcr.io/thediveo/devcontainer-features/local-pkgsite:1": {
+            "port": "6060"
+        },
         "ghcr.io/thediveo/devcontainer-features/pinact:0": {},
+        "ghcr.io/thediveo/devcontainer-features/go-mod-upgrade:1": {},
         "ghcr.io/thediveo/devcontainer-features/lazygit:0": {},
+        "ghcr.io/devcontainers/features/docker-in-docker:4": {
+            "version": "latest",
+            "moby": false // go for the upstream Docker-CE
+        },
         "ghcr.io/thediveo/devcontainer-features/gocover:1": {
             "num-programs": "1",
             "race": true,
@@ -21,23 +28,25 @@
             "html": true
         },
         "ghcr.io/thediveo/devcontainer-features/local-pkgsite:1": {
-            "port": "6060"
+            "port": "16094"
         },
-        "ghcr.io/devcontainers/features/docker-in-docker:4": {
+        "ghcr.io/devcontainers/features/docker-in-docker:3": {
             "version": "latest",
             "moby": false // go for the upstream Docker-CE
         }
     },
     "remoteEnv": {
         "GOPATH": "/home/vscode/go",
-        "PATH": "/home/vscode/go/bin:/go/bin:/usr/local/go/bin:${localEnv:PATH}"
+        "PATH": "/home/vscode/go/bin:/go/bin:/usr/local/go/bin:${containerEnv:PATH}"
     },
     "customizations": {
         "vscode": {
             "extensions": [
                 "dnut.rewrap-revived",
+                "dnut.rewrap-revived",
                 "brunnerh.insert-unicode",
                 "mhutchie.git-graph",
+                "ms-vscode.makefile-tools",
                 "ms-vscode.live-server"
             ]
         }

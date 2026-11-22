@@ -20,7 +20,7 @@ import (
 )
 
 // badYAMLValue causes the YAML marshaller to throw up.
-type badYAMLValue nada
+type badYAMLValue struct{}
 
 func (b badYAMLValue) MarshalYAML() (any, error) { return nil, errors.New("bad YAML value") }
 
@@ -38,7 +38,7 @@ const (
 	fsFailRead
 )
 
-// badFS fails on eihter opening a directory, opening a file, or alternatively
+// badFS fails on either opening a directory, opening a file, or alternatively
 // on reading a file (not directory).
 type badFS struct {
 	fs.FS
