@@ -53,6 +53,8 @@ type ComposerProject struct {
 // composer project file names into account. However, contrary to Docker's
 // composer, it doesn't look into parent directories for project files and it
 // doesn't take overrides into account.
+//
+// Passing nil for envvars disables all variable interpolation.
 func LoadComposerProject(ctx context.Context, workingDir string, envvars map[string]string) (*ComposerProject, error) {
 	for _, projectFilename := range composerFiles {
 		if _, err := os.Stat(filepath.Join(workingDir, projectFilename)); err == nil {
@@ -64,6 +66,8 @@ func LoadComposerProject(ctx context.Context, workingDir string, envvars map[str
 
 // NewComposerProject reads the specified YAML file containing a (Docker)
 // composer project and returns a ComposerProject object for it.
+//
+// Passing nil for envvars disables all variable interpolation.
 func NewComposerProject(ctx context.Context, workingDir, name string, envvars map[string]string) (*ComposerProject, error) {
 	// Configure the loader and get the YAML (with some checks).
 	details, err := loader.LoadConfigFiles(ctx,
@@ -81,7 +85,10 @@ func NewComposerProject(ctx context.Context, workingDir, name string, envvars ma
 	}
 	composeyaml, err := loader.LoadModelWithContext(ctx,
 		*details,
-		func(opts *loader.Options) { opts.SetProjectName(reponame, false) })
+		func(opts *loader.Options) {
+			opts.SetProjectName(reponame, false)
+			opts.SkipInterpolation = len(envvars) == 0
+		})
 	if err != nil {
 		return nil, fmt.Errorf("cannot load composer project model, reason: %w", err)
 	}

@@ -68,6 +68,22 @@ var _ = Describe("IE app composer projects", Ordered, func() {
 		Expect(p.Images()).Error().NotTo(HaveOccurred())
 	})
 
+	It("skips interpolation", func(ctx context.Context) {
+		p := Successful(LoadComposerProject(ctx, "testdata/composer/hellorld", nil))
+		var buff bytes.Buffer
+		Expect(p.Save(&buff)).To(Succeed())
+		Expect(buff.String()).To(ContainSubstring(`image: ${LOCAL_REGISTRY}alpine:edge`))
+	})
+
+	It("interpolates", func(ctx context.Context) {
+		p := Successful(LoadComposerProject(ctx, "testdata/composer/hellorld", map[string]string{
+			"LOCAL_REGISTRY": "foobar/",
+		}))
+		var buff bytes.Buffer
+		Expect(p.Save(&buff)).To(Succeed())
+		Expect(buff.String()).To(ContainSubstring(`image: foobar/alpine:edge`))
+	})
+
 	It("loads project, pulls images, writes back", slowSpec, func(ctx context.Context) {
 		defer grab.Log(GinkgoWriter, slog.LevelDebug)()
 
